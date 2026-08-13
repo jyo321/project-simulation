@@ -1,0 +1,26 @@
+# EC2-only override: rebinds the 3 API ports to loopback so only nginx (running on the
+# same host) can reach them — the internet-facing surface is nginx on 80/443 alone, even
+# if the EC2 security group is ever misconfigured. Local dev (docker-compose.yml on its
+# own) keeps the 0.0.0.0 bindings so Windows/WSL browsers can hit them directly.
+#
+# Usage: docker compose -f docker-compose.yml -f deploy/ec2/docker-compose.override.yml up -d --build
+services:
+  applications-api:
+    ports:
+      - "127.0.0.1:5001:8080"
+
+  documents-api:
+    ports:
+      - "127.0.0.1:5002:8080"
+
+  decisioning-api:
+    ports:
+      - "127.0.0.1:5003:8080"
+
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  localstack:
+    ports:
+      - "127.0.0.1:4566:4566"

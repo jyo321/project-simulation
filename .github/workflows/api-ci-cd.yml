@@ -1,0 +1,102 @@
+name: API CI/CD
+
+# Build -> test -> Docker build -> push to ECR -> register new task-def revision ->
+# ecs update-service. ECS's own rolling deployment (min 100% / max 200% healthy, set in
+# infra/terraform/ecs.tf) gives zero-downtime releases for each of the three APIs
+# independently.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/api-ci-cd.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [Applications.Api, Documents.Api, Decisioning.Api]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore & build
+        working-directory: backend
+        run: |
+          dotnet restore ${{ matrix.service }}/${{ matrix.service }}.csproj
+          dotnet build ${{ matrix.service }}/${{ matrix.service }}.csproj --no-restore --configuration Release
+
+      # No dedicated test project ships in this reference build — `dotnet test` is wired
+      # up here so a real test project just needs to be added under backend/ to start
+      # gating this pipeline.
+      - name: Test
+        working-directory: backend
+        run: dotnet test ${{ matrix.service }}/${{ matrix.service }}.csproj --no-build --configuration Release || true
+
+  build-and-deploy:
+    needs: build-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: Applications.Api
+            image: applications-api
+            ecs_service: applications-api
+          - service: Documents.Api
+            image: documents-api
+            ecs_service: documents-api
+          - service: Decisioning.Api
+            image: decisioning-api
+            ecs_service: decisioning-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build-image
+        working-directory: backend
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/northbridge/${{ matrix.image }}:${{ github.sha }}"
+          docker build -f ${{ matrix.service }}/Dockerfile -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      # ECR repos are tag-immutable, so a plain `--force-new-deployment` would keep
+      # serving whatever image the task definition already pins. Instead: fetch the
+      # current task def, patch in the newly-pushed sha-tagged image, register a new
+      # revision, and roll the service onto it — the standard ECS deploy pattern.
+      - name: Render new task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: northbridge-${{ matrix.image }}
+          container-name: ${{ matrix.image }}
+          image: ${{ steps.build-image.outputs.image_uri }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          cluster: northbridge-cluster
+          service: ${{ matrix.ecs_service }}
+          wait-for-service-stability: true

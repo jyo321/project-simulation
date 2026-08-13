@@ -1,0 +1,55 @@
+name: Infra CI/CD
+
+# Kept deliberately separate from the app pipelines (docs/architecture.md §9): a network or
+# schema change should never ship silently bundled with an application deploy. Plan runs on
+# every PR; apply requires the `infra-prod` environment's manual approval gate.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+
+defaults:
+  run:
+    working-directory: infra/terraform
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - run: terraform init
+      - run: terraform validate
+      - run: terraform plan -input=false -var="db_password=${{ secrets.DB_PASSWORD }}"
+
+  apply:
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: infra-prod # requires manual approval in repo settings
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - run: terraform init
+      - run: terraform apply -input=false -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}"

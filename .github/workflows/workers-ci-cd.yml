@@ -1,0 +1,132 @@
+name: Background Services CI/CD
+
+# Covers all 5 background services plus the Notification Worker. The three standing-service
+# workers (document/status/notification) roll like the APIs — new task-def revision, then
+# ecs update-service. The three one-shot job images (daily report, credit scoring, fraud
+# forensics) are invoked via ecs:RunTask, not a service — pushing a new sha-tagged image and
+# registering it as the new task-definition revision is enough; the next EventBridge
+# Scheduler / Pipes invocation picks it up automatically, with no service to roll.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/**"
+      - "notification-service/**"
+      - "backend/Northbridge.Shared/**"
+      - ".github/workflows/workers-ci-cd.yml"
+  pull_request:
+    paths:
+      - "workers/**"
+      - "notification-service/**"
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - project: DocumentValidationWorker
+            path: workers/DocumentValidationWorker
+          - project: StatusProjectorWorker
+            path: workers/StatusProjectorWorker
+          - project: DailyStaleReportJob
+            path: workers/DailyStaleReportJob
+          - project: CreditScoringJob
+            path: workers/CreditScoringJob
+          - project: FraudForensicsJob
+            path: workers/FraudForensicsJob
+          - project: NotificationWorker
+            path: notification-service/NotificationWorker
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build
+        run: dotnet build ${{ matrix.path }}/${{ matrix.project }}.csproj --configuration Release
+
+  build-and-push:
+    needs: build-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - project: DocumentValidationWorker
+            path: workers/DocumentValidationWorker
+            image: document-validation-worker
+            kind: service
+            ecs_service: document-validation-worker
+          - project: StatusProjectorWorker
+            path: workers/StatusProjectorWorker
+            image: status-projector-worker
+            kind: service
+            ecs_service: status-projector-worker
+          - project: NotificationWorker
+            path: notification-service/NotificationWorker
+            image: notification-worker
+            kind: service
+            ecs_service: notification-worker
+          - project: DailyStaleReportJob
+            path: workers/DailyStaleReportJob
+            image: daily-stale-report-job
+            kind: job
+          - project: CreditScoringJob
+            path: workers/CreditScoringJob
+            image: credit-scoring-job
+            kind: job
+          - project: FraudForensicsJob
+            path: workers/FraudForensicsJob
+            image: fraud-forensics-job
+            kind: job
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build-image
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/northbridge/${{ matrix.image }}:${{ github.sha }}"
+          docker build -f ${{ matrix.path }}/Dockerfile -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Render new task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: northbridge-${{ matrix.image }}
+          container-name: ${{ matrix.image }}
+          image: ${{ steps.build-image.outputs.image_uri }}
+
+      # Standing-service workers roll like an API; one-shot job task-defs just register a
+      # new revision — there's no service to update, and no `wait-for-service-stability`
+      # to skip.
+      - name: Deploy to ECS (service)
+        if: matrix.kind == 'service'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          cluster: northbridge-cluster
+          service: ${{ matrix.ecs_service }}
+          wait-for-service-stability: true
+
+      - name: Register task definition (job)
+        if: matrix.kind == 'job'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}

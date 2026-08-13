@@ -1,0 +1,10 @@
+# Build context for the worker/notification-worker Dockerfiles (context: .). Host-built
+# bin/obj folders contain machine-specific (Windows) NuGet paths that break the Linux
+# container's restore/publish if copied in — always rebuild them fresh inside the image.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.angular/
+.git/
+.terraform/

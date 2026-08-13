@@ -1,0 +1,4 @@
+# Build context for the three API Dockerfiles (context: backend). See root .dockerignore
+# for why bin/obj must never be copied into the Linux build container.
+**/bin/
+**/obj/

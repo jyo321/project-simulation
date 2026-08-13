@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/Applications.Api/Applications.Api.csproj" />
+    <Project Path="backend/Decisioning.Api/Decisioning.Api.csproj" />
+    <Project Path="backend/Documents.Api/Documents.Api.csproj" />
+    <Project Path="backend/Northbridge.Shared/Northbridge.Shared.csproj" />
+  </Folder>
+  <Folder Name="/notification-service/">
+    <Project Path="notification-service/NotificationWorker/NotificationWorker.csproj" />
+  </Folder>
+  <Folder Name="/workers/">
+    <Project Path="workers/CreditScoringJob/CreditScoringJob.csproj" />
+    <Project Path="workers/DailyStaleReportJob/DailyStaleReportJob.csproj" />
+    <Project Path="workers/DocumentValidationWorker/DocumentValidationWorker.csproj" />
+    <Project Path="workers/FraudForensicsJob/FraudForensicsJob.csproj" />
+    <Project Path="workers/StatusProjectorWorker/StatusProjectorWorker.csproj" />
+  </Folder>
+</Solution>

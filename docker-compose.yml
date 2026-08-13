@@ -1,0 +1,182 @@
+# Local dev/demo stack: runs the whole Northbridge system — 3 APIs, 5 background workers,
+# the notification worker, Postgres, and LocalStack standing in for S3/SQS/SNS — with no AWS
+# account required. In real deployments, LocalStack is replaced by the actual AWS services
+# provisioned in infra/terraform; nothing in the application code changes.
+
+x-dotnet-aws-env: &dotnet-aws-env
+  AWS__Region: us-east-1
+  AWS__DefaultClientConfig__ServiceURL: http://localstack:4566
+  AWS__DefaultClientConfig__UseHttp: "true"
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  ConnectionStrings__Northbridge: Host=postgres;Port=5432;Database=northbridge;Username=northbridge;Password=northbridge
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: northbridge
+      POSTGRES_USER: northbridge
+      POSTGRES_PASSWORD: northbridge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U northbridge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: s3,sqs,sns,secretsmanager,ses
+      DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./scripts/localstack-init:/etc/localstack/init/ready.d
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  applications-api:
+    build:
+      context: backend
+      dockerfile: Applications.Api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5001:8080"
+    environment:
+      <<: *dotnet-aws-env
+      Messaging__ApplicationEventsTopicArn: arn:aws:sns:us-east-1:000000000000:application-events
+      Messaging__CreditScoringQueueUrl: http://localstack:4566/000000000000/credit-scoring-jobs
+      AllowedOrigins__0: http://localhost:4200
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  documents-api:
+    build:
+      context: backend
+      dockerfile: Documents.Api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5002:8080"
+    environment:
+      <<: *dotnet-aws-env
+      Messaging__DocumentValidationQueueUrl: http://localstack:4566/000000000000/document-validation
+      Messaging__FraudAnalysisQueueUrl: http://localstack:4566/000000000000/fraud-analysis-jobs
+      Buckets__RawDocuments: raw-documents
+      Buckets__GeneratedDocuments: generated-documents
+      Buckets__Reports: reports
+      AllowedOrigins__0: http://localhost:4200
+      AllowedOrigins__1: http://localhost:4201
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  decisioning-api:
+    build:
+      context: backend
+      dockerfile: Decisioning.Api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5003:8080"
+    environment:
+      <<: *dotnet-aws-env
+      Messaging__ApplicationEventsTopicArn: arn:aws:sns:us-east-1:000000000000:application-events
+      Buckets__RawDocuments: raw-documents
+      Buckets__GeneratedDocuments: generated-documents
+      Buckets__Reports: reports
+      AllowedOrigins__0: http://localhost:4201
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  document-validation-worker:
+    build:
+      context: .
+      dockerfile: workers/DocumentValidationWorker/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *dotnet-aws-env
+      Worker__DocumentValidationQueueUrl: http://localstack:4566/000000000000/document-validation
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  status-projector-worker:
+    build:
+      context: .
+      dockerfile: workers/StatusProjectorWorker/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *dotnet-aws-env
+      Worker__StatusProjectorQueueUrl: http://localstack:4566/000000000000/status-projector
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  notification-worker:
+    build:
+      context: .
+      dockerfile: notification-service/NotificationWorker/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *dotnet-aws-env
+      Worker__NotificationsQueueUrl: http://localstack:4566/000000000000/notifications
+      Worker__SenderEmail: notifications@northbridgelending.com
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  # The three one-shot jobs are NOT long-running services in real AWS (they're invoked via
+  # ecs:RunTask — see infra/terraform/messaging.tf). Here they're modeled as `profiles`-gated
+  # one-off containers: run them on demand with, e.g.,
+  #   docker compose run --rm -e JOB_ID=... -e LOAN_APPLICATION_ID=... credit-scoring-job
+  daily-stale-report-job:
+    build:
+      context: .
+      dockerfile: workers/DailyStaleReportJob/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      <<: *dotnet-aws-env
+      Job__StaleAfterDays: "5"
+      Job__ReportsBucket: reports
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  credit-scoring-job:
+    build:
+      context: .
+      dockerfile: workers/CreditScoringJob/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      <<: *dotnet-aws-env
+      Messaging__ApplicationEventsTopicArn: arn:aws:sns:us-east-1:000000000000:application-events
+      Job__GeneratedDocumentsBucket: generated-documents
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  fraud-forensics-job:
+    build:
+      context: .
+      dockerfile: workers/FraudForensicsJob/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      <<: *dotnet-aws-env
+      Messaging__ApplicationEventsTopicArn: arn:aws:sns:us-east-1:000000000000:application-events
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+volumes:
+  postgres-data:
+  localstack-data:

@@ -1,0 +1,61 @@
+name: Frontend CI/CD
+
+# Each Angular SPA deploys independently (micro-frontend requirement, brief §2.1) — the
+# path filter plus the matrix's own working-directory means releasing applicant-portal
+# never touches reviewer-console's CloudFront distribution, and vice versa.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci-cd.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app:
+          - name: applicant-portal
+            s3_bucket_output: applicant_portal_bucket
+            cloudfront_output: applicant_portal_cloudfront_id
+          - name: reviewer-console
+            s3_bucket_output: reviewer_console_bucket
+            cloudfront_output: reviewer_console_cloudfront_id
+
+    defaults:
+      run:
+        working-directory: frontend/${{ matrix.app.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/${{ matrix.app.name }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (production)
+        run: npx ng build --configuration production
+
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Sync to S3
+        if: github.ref == 'refs/heads/main'
+        run: aws s3 sync dist/${{ matrix.app.name }}/browser s3://${{ secrets[matrix.app.s3_bucket_output] }} --delete
+
+      - name: Invalidate CloudFront cache
+        if: github.ref == 'refs/heads/main'
+        run: aws cloudfront create-invalidation --distribution-id ${{ secrets[matrix.app.cloudfront_output] }} --paths "/*"

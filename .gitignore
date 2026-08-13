@@ -1,0 +1,30 @@
+# .NET
+bin/
+obj/
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+
+# IDE / OS / tooling
+.vs/
+.idea/
+.claude/
+*.user
+.DS_Store
+
+# Secrets — never commit real credentials
+*.pem
+.env
+.env.*
+!.env.example
