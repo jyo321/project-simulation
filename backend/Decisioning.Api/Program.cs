@@ -32,10 +32,14 @@ builder.Services.AddAuthentication().AddJwtBearer(options =>
 });
 builder.Services.AddAuthorization();
 
+// Allows any origin rather than a fixed AllowedOrigins list: this reference/demo build
+// gets run from wherever (localhost, a VM's public IP, ...) and re-editing config per
+// host defeats the point of a quick deploy. A real production deployment (behind
+// CloudFront, per infra/terraform) should tighten this back to an explicit origin list.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("SpaOrigins", policy =>
-        policy.WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? Array.Empty<string>())
+        policy.SetIsOriginAllowed(_ => true)
             .AllowAnyHeader()
             .AllowAnyMethod());
 });
