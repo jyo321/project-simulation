@@ -35,7 +35,7 @@ builder.Services.AddDbContext<NorthbridgeDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Northbridge")));
 
 builder.Services.AddDefaultAWSOptions(NorthbridgeAwsOptions.Build(builder.Configuration));
-builder.Services.AddAWSService<IAmazonS3>();
+builder.Services.AddSingleton<IAmazonS3>(_ => new AmazonS3Client(NorthbridgeAwsOptions.BuildS3Config(builder.Configuration)));
 builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
 builder.Services.AddScoped<IObjectStorageService, S3ObjectStorageService>();
 builder.Services.AddScoped<IEventPublisher, SnsEventPublisher>();

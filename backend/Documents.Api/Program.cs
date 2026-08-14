@@ -20,7 +20,7 @@ builder.Services.Configure<MessagingOptions>(builder.Configuration.GetSection("M
 builder.Services.Configure<BucketOptions>(builder.Configuration.GetSection("Buckets"));
 
 builder.Services.AddDefaultAWSOptions(NorthbridgeAwsOptions.Build(builder.Configuration));
-builder.Services.AddAWSService<IAmazonS3>();
+builder.Services.AddSingleton<IAmazonS3>(_ => new AmazonS3Client(NorthbridgeAwsOptions.BuildS3Config(builder.Configuration)));
 builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
 builder.Services.AddAWSService<IAmazonSQS>();
 

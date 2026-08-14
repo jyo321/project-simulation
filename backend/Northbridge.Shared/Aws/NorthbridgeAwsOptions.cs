@@ -1,4 +1,5 @@
 using Amazon.Extensions.NETCore.Setup;
+using Amazon.S3;
 using Microsoft.Extensions.Configuration;
 
 namespace Northbridge.Shared.Aws;
@@ -28,5 +29,30 @@ public static class NorthbridgeAwsOptions
         }
 
         return options;
+    }
+
+    /// <summary>
+    /// S3 needs its own config type because <c>ForcePathStyle</c> only exists on
+    /// <see cref="AmazonS3Config"/>, not the generic <c>ClientConfig</c> that
+    /// <see cref="AWSOptions.DefaultClientConfig"/> uses. Without it, the SDK addresses
+    /// buckets virtual-hosted-style (<c>https://&lt;bucket&gt;.&lt;host&gt;/...</c>), which
+    /// LocalStack doesn't resolve — every PutObject/GetObject call fails with a DNS error
+    /// like "Name or service not known (generated-documents.localstack)". Path-style
+    /// (<c>https://&lt;host&gt;/&lt;bucket&gt;/...</c>) is what LocalStack expects.
+    /// </summary>
+    public static AmazonS3Config BuildS3Config(IConfiguration configuration)
+    {
+        var options = Build(configuration);
+        var config = new AmazonS3Config { RegionEndpoint = options.Region };
+
+        if (!string.IsNullOrEmpty(options.DefaultClientConfig.ServiceURL))
+        {
+            config.ServiceURL = options.DefaultClientConfig.ServiceURL;
+            config.UseHttp = options.DefaultClientConfig.UseHttp;
+            config.AuthenticationRegion = options.DefaultClientConfig.AuthenticationRegion;
+            config.ForcePathStyle = true;
+        }
+
+        return config;
     }
 }

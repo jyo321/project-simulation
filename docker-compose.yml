@@ -71,6 +71,12 @@ services:
       <<: *dotnet-aws-env
       Messaging__DocumentValidationQueueUrl: http://localstack:4566/000000000000/document-validation
       Messaging__FraudAnalysisQueueUrl: http://localstack:4566/000000000000/fraud-analysis-jobs
+      # Presigned URLs are signed against ServiceURL above ("localstack:4566" — only
+      # resolvable inside the Docker network) but must be usable by a real browser, so
+      # S3ObjectStorageService rewrites the host to this instead. Defaults to localhost for
+      # local dev; set PUBLIC_HOST=<vm-public-ip> before `docker compose up` when running
+      # on a VM (see deploy/ec2/README.md) — and open port 4566 in its security group.
+      AWS__DefaultClientConfig__PublicServiceURL: http://${PUBLIC_HOST:-localhost}:4566
       Buckets__RawDocuments: raw-documents
       Buckets__GeneratedDocuments: generated-documents
       Buckets__Reports: reports
