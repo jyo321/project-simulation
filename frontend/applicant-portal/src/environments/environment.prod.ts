@@ -1,13 +1,11 @@
-// Real AWS deployment (infra/terraform): the ALB routes all three APIs behind ONE
-// domain purely by path pattern (see infra/terraform/ecs.tf's listener rules — e.g.
-// "/api/applicants*" and "/api/applications*" both go to Applications.Api) with no
-// prefix stripping, unlike the EC2/nginx path (environment.ec2.ts). So every base URL
-// here is the same domain + "/api" — replace API_DOMAIN with the real domain you
-// pointed at the ALB's DNS name (terraform output alb_dns_name) before building.
-const API_DOMAIN = 'api.northbridgelending.com'; // <-- replace with your real domain
-
+// Real AWS deployment (infra/terraform): CloudFront fronts both the S3 static assets AND
+// the ALB (see infra/terraform/cloudfront_frontend.tf's ordered_cache_behavior for
+// "/api/*"), so the SPA's own CloudFront domain doubles as the API's public address — no
+// separate domain, no ACM certificate, no Route 53. The ALB's own path-based routing
+// (ecs.tf's listener rules — "/api/applicants*", "/api/applications*", etc.) does the
+// rest, so a plain relative "/api" is all that's needed here.
 export const environment = {
   production: true,
-  applicationsApiBaseUrl: `https://${API_DOMAIN}/api`,
-  documentsApiBaseUrl: `https://${API_DOMAIN}/api`,
+  applicationsApiBaseUrl: '/api',
+  documentsApiBaseUrl: '/api',
 };

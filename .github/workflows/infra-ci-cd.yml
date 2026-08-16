@@ -45,7 +45,7 @@ jobs:
           aws-region: us-east-1
 
       - run: terraform init
-      - run: terraform plan -input=false -var="db_password=${{ secrets.DB_PASSWORD }}" -var="acm_certificate_arn=${{ secrets.ACM_CERTIFICATE_ARN }}" -var="github_repo=${{ github.repository }}"
+      - run: terraform plan -input=false -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"
 
   apply:
     needs: plan
@@ -62,4 +62,4 @@ jobs:
           aws-region: us-east-1
 
       - run: terraform init
-      - run: terraform apply -input=false -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}" -var="acm_certificate_arn=${{ secrets.ACM_CERTIFICATE_ARN }}" -var="github_repo=${{ github.repository }}"
+      - run: terraform apply -input=false -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"

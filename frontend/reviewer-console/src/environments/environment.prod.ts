@@ -1,9 +1,8 @@
 // Real AWS deployment — see the matching comment in applicant-portal's environment.prod.ts.
-// Same ALB, same domain, no prefix stripping.
-const API_DOMAIN = 'api.northbridgelending.com'; // <-- replace with your real domain
-
+// This app is served under /reviewer/ (via --base-href) but its API calls stay at the
+// site root, same CloudFront distribution, same ALB behind it.
 export const environment = {
   production: true,
-  decisioningApiBaseUrl: `https://${API_DOMAIN}/api`,
-  documentsApiBaseUrl: `https://${API_DOMAIN}/api`,
+  decisioningApiBaseUrl: '/api',
+  documentsApiBaseUrl: '/api',
 };

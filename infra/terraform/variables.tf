@@ -80,12 +80,6 @@ variable "stale_after_days" {
   default     = 5
 }
 
-variable "acm_certificate_arn" {
-  description = "ACM certificate ARN for the ALB's HTTPS listener (issued/validated outside this module against the real domain)."
-  type        = string
-  default     = ""
-}
-
 variable "container_image_tag" {
   description = "Image tag deployed for every service — set by the CI/CD pipeline per release."
   type        = string

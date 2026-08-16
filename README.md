@@ -60,8 +60,8 @@ created automatically the first time the stack comes up.
 ```bash
 cd infra/terraform
 terraform init
-terraform plan  -var="db_password=<secret>" -var="acm_certificate_arn=<your-acm-cert>"
-terraform apply -var="db_password=<secret>" -var="acm_certificate_arn=<your-acm-cert>"
+terraform plan  -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
+terraform apply -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
 ```
 
 This provisions the VPC, RDS, S3 buckets, SQS/SNS/EventBridge topology, ECS cluster/ALB,

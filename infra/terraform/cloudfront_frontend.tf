@@ -1,5 +1,17 @@
 # Two independent S3 + CloudFront pairs (brief §2.1 / §5.1): each Angular SPA is its own
 # bucket and its own distribution so one app's release can never touch the other's.
+#
+# Each distribution also fronts the ALB for /api/* — this is what lets the whole system run
+# off the CloudFront URL alone, with no custom domain, no Route 53, and no ACM certificate:
+# CloudFront terminates HTTPS with its own free default certificate, then reaches the ALB
+# over plain HTTP inside AWS's network. A random secret header (only CloudFront knows it)
+# stops anyone from bypassing CloudFront and hitting the ALB's public DNS name directly —
+# see the matching listener-rule conditions in ecs.tf.
+
+resource "random_password" "origin_verify" {
+  length  = 32
+  special = false
+}
 
 locals {
   spas = {
@@ -52,6 +64,23 @@ resource "aws_cloudfront_distribution" "spa" {
     origin_access_control_id = aws_cloudfront_origin_access_control.spa[each.key].id
   }
 
+  origin {
+    domain_name = aws_lb.main.dns_name
+    origin_id   = "alb"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only" # ALB only listens on 80 — see ecs.tf
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+
+    custom_header {
+      name  = "X-Origin-Verify"
+      value = random_password.origin_verify.result
+    }
+  }
+
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
@@ -62,6 +91,29 @@ resource "aws_cloudfront_distribution" "spa" {
       query_string = false
       cookies {
         forward = "none"
+      }
+    }
+  }
+
+  # Every API call the SPA makes goes through this same CloudFront distribution — same
+  # origin as the static assets, so there's no cross-origin request and no separate domain
+  # to stand up. Not cached (APIs are dynamic) and every header/cookie/query string is
+  # forwarded untouched since the ALB's own path-based routing (ecs.tf) needs the real path.
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "alb"
+    viewer_protocol_policy = "https-only"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+
+    forwarded_values {
+      query_string = true
+      headers      = ["*"]
+      cookies {
+        forward = "all"
       }
     }
   }

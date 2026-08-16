@@ -4,13 +4,13 @@
 
 resource "aws_security_group" "alb" {
   name        = "northbridge-alb-sg"
-  description = "Public HTTPS entry point"
+  description = "HTTP entry point — reachable only meaningfully via CloudFront, which holds the X-Origin-Verify secret every listener rule requires (ecs.tf)"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "HTTPS from CloudFront / internet"
-    from_port   = 443
-    to_port     = 443
+    description = "HTTP from CloudFront (TLS is terminated at CloudFront, not here)"
+    from_port   = 80
+    to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }

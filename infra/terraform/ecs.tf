@@ -34,12 +34,15 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb.id]
 }
 
-resource "aws_lb_listener" "https" {
+# Plain HTTP — deliberately no ACM certificate/domain required. CloudFront (see
+# cloudfront_frontend.tf) terminates HTTPS for the public internet with its own free
+# default certificate, then reaches this listener over HTTP inside AWS's network. Every
+# listener rule below additionally requires the X-Origin-Verify header CloudFront alone
+# knows, so hitting this ALB's public DNS name directly never matches a real route.
+resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
-  port              = 443
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = var.acm_certificate_arn
+  port              = 80
+  protocol          = "HTTP"
 
   default_action {
     type = "fixed-response"
@@ -88,7 +91,7 @@ resource "aws_lb_target_group" "decisioning_api" {
 # decision sub-resource; everything else under /api/applications* falls through to
 # Applications.Api.
 resource "aws_lb_listener_rule" "decisioning_reviewer_queue" {
-  listener_arn = aws_lb_listener.https.arn
+  listener_arn = aws_lb_listener.http.arn
   priority     = 10
 
   action {
@@ -101,10 +104,17 @@ resource "aws_lb_listener_rule" "decisioning_reviewer_queue" {
       values = ["/api/reviewer-queue*"]
     }
   }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [random_password.origin_verify.result]
+    }
+  }
 }
 
 resource "aws_lb_listener_rule" "decisioning_decision" {
-  listener_arn = aws_lb_listener.https.arn
+  listener_arn = aws_lb_listener.http.arn
   priority     = 11
 
   action {
@@ -117,10 +127,17 @@ resource "aws_lb_listener_rule" "decisioning_decision" {
       values = ["/api/applications/*/decision"]
     }
   }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [random_password.origin_verify.result]
+    }
+  }
 }
 
 resource "aws_lb_listener_rule" "documents_api" {
-  listener_arn = aws_lb_listener.https.arn
+  listener_arn = aws_lb_listener.http.arn
   priority     = 20
 
   action {
@@ -133,10 +150,17 @@ resource "aws_lb_listener_rule" "documents_api" {
       values = ["/api/documents*"]
     }
   }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [random_password.origin_verify.result]
+    }
+  }
 }
 
 resource "aws_lb_listener_rule" "applications_api" {
-  listener_arn = aws_lb_listener.https.arn
+  listener_arn = aws_lb_listener.http.arn
   priority     = 30
 
   action {
@@ -147,6 +171,13 @@ resource "aws_lb_listener_rule" "applications_api" {
   condition {
     path_pattern {
       values = ["/api/applicants*", "/api/applications*"]
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [random_password.origin_verify.result]
     }
   }
 }
