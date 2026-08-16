@@ -23,6 +23,18 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                { "replace": "src/environments/environment.ts", "with": "src/environments/environment.prod.ts" }
+              ],
+              "budgets": [
+                { "type": "initial", "maximumWarning": "1mb", "maximumError": "2mb" }
+              ],
+              "outputHashing": "all"
+            },
+            "ec2": {
+              "fileReplacements": [
+                { "replace": "src/environments/environment.ts", "with": "src/environments/environment.ec2.ts" }
+              ],
               "budgets": [
                 { "type": "initial", "maximumWarning": "1mb", "maximumError": "2mb" }
               ],
@@ -39,6 +51,7 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "production": { "buildTarget": "reviewer-console:build:production" },
+            "ec2": { "buildTarget": "reviewer-console:build:ec2" },
             "development": { "buildTarget": "reviewer-console:build:development" }
           },
           "defaultConfiguration": "development"

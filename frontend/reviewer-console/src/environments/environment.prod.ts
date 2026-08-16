@@ -1,8 +1,9 @@
-// Relative paths — nginx (see deploy/ec2/nginx.conf) reverse-proxies these same-origin.
-// This app is served under the /reviewer/ path (see nginx.conf and the --base-href flag
-// in deploy/ec2/README.md), but its API calls stay at the site root, same as applicant-portal.
+// Real AWS deployment — see the matching comment in applicant-portal's environment.prod.ts.
+// Same ALB, same domain, no prefix stripping.
+const API_DOMAIN = 'api.northbridgelending.com'; // <-- replace with your real domain
+
 export const environment = {
   production: true,
-  decisioningApiBaseUrl: '/decisioning-api/api',
-  documentsApiBaseUrl: '/documents-api/api',
+  decisioningApiBaseUrl: `https://${API_DOMAIN}/api`,
+  documentsApiBaseUrl: `https://${API_DOMAIN}/api`,
 };

@@ -23,6 +23,9 @@ crash.*.log
 *.user
 .DS_Store
 
+# Generated reference diagrams — local-only, not pushed to GitHub
+docs/architecture-diagrams.html
+
 # Secrets — never commit real credentials
 *.pem
 .env

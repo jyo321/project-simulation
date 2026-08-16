@@ -17,24 +17,35 @@ defaults:
     working-directory: infra/terraform
 
 jobs:
-  plan:
+  # Runs on PRs too — no AWS credentials needed for fmt/validate, so PRs (which the
+  # OIDC trust policy in github_oidc.tf deliberately does not grant AWS access to)
+  # still get fast feedback on syntax errors.
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
 
-      - name: terraform fmt -check
-        run: terraform fmt -check -recursive
+  # Only runs on push to main — this is the only trigger the OIDC trust policy
+  # (repo:<owner>/<repo>:ref:refs/heads/main) actually authorizes.
+  plan:
+    needs: validate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
           aws-region: us-east-1
 
       - run: terraform init
-      - run: terraform validate
-      - run: terraform plan -input=false -var="db_password=${{ secrets.DB_PASSWORD }}"
+      - run: terraform plan -input=false -var="db_password=${{ secrets.DB_PASSWORD }}" -var="acm_certificate_arn=${{ secrets.ACM_CERTIFICATE_ARN }}" -var="github_repo=${{ github.repository }}"
 
   apply:
     needs: plan
@@ -43,13 +54,12 @@ jobs:
     environment: infra-prod # requires manual approval in repo settings
     steps:
       - uses: actions/checkout@v4
-
       - uses: hashicorp/setup-terraform@v3
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
           aws-region: us-east-1
 
       - run: terraform init
-      - run: terraform apply -input=false -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}"
+      - run: terraform apply -input=false -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}" -var="acm_certificate_arn=${{ secrets.ACM_CERTIFICATE_ARN }}" -var="github_repo=${{ github.repository }}"

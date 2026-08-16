@@ -85,15 +85,17 @@ curl http://127.0.0.1:5003/health
 ```bash
 cd frontend/applicant-portal
 npm install
-npx ng build --configuration production
+npx ng build --configuration ec2
 cd ../reviewer-console
 npm install
-npx ng build --configuration production --base-href /reviewer/
+npx ng build --configuration ec2 --base-href /reviewer/
 cd ../..
 ```
 
-(`environment.prod.ts` in both apps already points at relative paths like
-`/applications-api/api` — that's what nginx's `deploy/ec2/nginx.conf` proxies.)
+(The `ec2` build configuration swaps in `environment.ec2.ts`, which points at relative
+paths like `/applications-api/api` — that's what nginx's `deploy/ec2/nginx.conf` proxies.
+Plain `--configuration production` instead builds against `environment.prod.ts`, which
+targets the real ALB/CloudFront deployment's domain — don't use it here.)
 
 ## 6. Deploy the static files and nginx config
 
@@ -127,9 +129,9 @@ docker compose -f docker-compose.yml -f deploy/ec2/docker-compose.override.yml r
 ```bash
 git pull   # or re-scp
 docker compose -f docker-compose.yml -f deploy/ec2/docker-compose.override.yml up -d --build
-cd frontend/applicant-portal && npx ng build --configuration production && cd ../..
+cd frontend/applicant-portal && npx ng build --configuration ec2 && cd ../..
 sudo cp -r frontend/applicant-portal/dist/applicant-portal/browser/* /var/www/applicant-portal/
-cd frontend/reviewer-console && npx ng build --configuration production --base-href /reviewer/ && cd ../..
+cd frontend/reviewer-console && npx ng build --configuration ec2 --base-href /reviewer/ && cd ../..
 sudo cp -r frontend/reviewer-console/dist/reviewer-console/browser/* /var/www/reviewer-console/
 ```
 
