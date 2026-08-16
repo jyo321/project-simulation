@@ -66,8 +66,45 @@ terraform apply -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
 
 This provisions the VPC, RDS, S3 buckets, SQS/SNS/EventBridge topology, ECS cluster/ALB,
 ECR repositories, and the two CloudFront distributions. It does **not** push any container
-images — run the CI/CD workflows (or `docker build`/`docker push` by hand) against the ECR
-repos Terraform creates before the ECS services can start healthy.
+images — that's what the CI/CD pipelines below are for.
+
+Notice there's no `acm_certificate_arn` or domain anywhere: each CloudFront distribution
+fronts both its S3 bucket *and* the ALB (see `infra/terraform/cloudfront_frontend.tf`),
+terminating HTTPS with CloudFront's own free default certificate. The whole system is
+reachable from the CloudFront URL alone — `terraform output applicant_portal_cloudfront_domain`
+/ `reviewer_console_cloudfront_domain` — no domain purchase or Route 53 record required.
+
+## CI/CD (GitHub Actions)
+
+Yes — deployment after the initial `terraform apply` above is fully automated. Four
+pipelines in [`.github/workflows`](.github/workflows), matching the brief's requirement
+that each deployable piece ships independently:
+
+| Workflow | Triggers on | Does |
+|---|---|---|
+| `frontend-ci-cd.yml` | changes under `frontend/**` | builds each Angular app, syncs it to its own S3 bucket, invalidates its own CloudFront distribution — one app's release never touches the other's |
+| `api-ci-cd.yml` | changes under `backend/**` | builds/tests each API, pushes a new image to its ECR repo, rolls its ECS service (zero-downtime, ECS's own rolling deployment) |
+| `workers-ci-cd.yml` | changes under `workers/**`, `notification-service/**`, `backend/Northbridge.Shared/**` | same as above for the 5 workers + notification worker — standing workers get an ECS service roll, the 3 one-shot jobs just get a new task-definition revision (nothing to "roll" since they're not a service) |
+| `infra-ci-cd.yml` | changes under `infra/terraform/**` | `terraform plan` on every PR and on push to `main`; `terraform apply` runs only after manual approval on the `infra-prod` GitHub environment — kept separate so an infra change never ships silently bundled with an app deploy |
+
+**Authentication**: no long-lived AWS access keys stored in GitHub. `infra/terraform/github_oidc.tf`
+provisions two IAM roles GitHub Actions assumes via OIDC, trusting only pushes to `main`
+in this specific repo:
+- a narrow **deploy role** (ECR push, ECS roll, S3 sync, CloudFront invalidate) — used by
+  the frontend/api/workers pipelines
+- a broad **terraform role** (full infra changes) — used only by `infra-ci-cd.yml`'s
+  `apply` job, behind the manual-approval gate
+
+**One-time setup** after the first `terraform apply`, before pushing to any of the
+watched paths:
+1. Settings → Environments → new environment `infra-prod` → add yourself as a required reviewer
+2. Settings → Secrets and variables → Actions → add `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN`
+   and `AWS_TERRAFORM_ROLE_ARN` (from `terraform output`), `DB_PASSWORD`, and the four
+   `applicant_portal_bucket` / `applicant_portal_cloudfront_id` / `reviewer_console_bucket` /
+   `reviewer_console_cloudfront_id` values (also from `terraform output`)
+
+After that, `git push` to `main` is the entire deploy step — whichever pipelines match the
+changed paths run on their own.
 
 ## Local dev vs. AWS — what actually differs
 
