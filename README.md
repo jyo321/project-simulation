@@ -17,7 +17,7 @@ and explicit answers to every question in the brief).
 | [`backend/Northbridge.Shared`](backend/Northbridge.Shared) | EF Core entities/DbContext + AWS client abstractions shared by every service | — |
 | [`workers/DocumentValidationWorker`](workers/DocumentValidationWorker) | Service-triggered (SQS) | §2.3.1, worker #1 |
 | [`workers/StatusProjectorWorker`](workers/StatusProjectorWorker) | Service-triggered (SNS→SQS) | §2.3.1, worker #2 |
-| [`workers/DailyStaleReportJob`](workers/DailyStaleReportJob) | Time-based (EventBridge Scheduler cron), Postgres advisory lock | §2.3.2 |
+| [`workers/DailyStaleReportJob`](workers/DailyStaleReportJob) | Time-based (EventBridge Scheduler cron → Lambda), Postgres advisory lock | §2.3.2 |
 | [`workers/CreditScoringJob`](workers/CreditScoringJob) | Fire-and-forget, >20 min, ECS RunTask | §2.3.3, job #1 |
 | [`workers/FraudForensicsJob`](workers/FraudForensicsJob) | Fire-and-forget, >20 min, ECS RunTask | §2.3.3, job #2 |
 | [`notification-service/NotificationWorker`](notification-service/NotificationWorker) | Retry + backoff + DLQ, SES/SNS | §2.6 |
@@ -39,17 +39,25 @@ cd frontend/applicant-portal && npm install && npm start   # http://localhost:42
 cd frontend/reviewer-console && npm install && npm start   # http://localhost:4201
 ```
 
-The three fire-and-forget/scheduled jobs (`daily-stale-report-job`, `credit-scoring-job`,
-`fraud-forensics-job`) are modeled as one-shot containers, matching how they really run in
-AWS (`ecs:RunTask`, not a standing service) — not something `docker compose up` starts.
-Trigger one manually, e.g. after submitting an application and grabbing its `jobId` from the
-API response:
+The two fire-and-forget jobs (`credit-scoring-job`, `fraud-forensics-job`) are modeled as
+one-shot containers, matching how they really run in AWS (`ecs:RunTask`, not a standing
+service) — not something `docker compose up` starts. Trigger one manually, e.g. after
+submitting an application and grabbing its `jobId` from the API response:
 
 ```bash
 docker compose run --rm \
   -e JOB_ID=<job-id-from-submit-response> \
   -e LOAN_APPLICATION_ID=<application-id> \
   credit-scoring-job
+```
+
+`daily-stale-report-job` runs as AWS Lambda in real AWS, so its image is built FROM
+`public.ecr.aws/lambda/dotnet`, which bundles the Lambda Runtime Interface Emulator —
+start it like a service and invoke it with a curl POST instead of `docker compose run`:
+
+```bash
+docker compose up -d daily-stale-report-job
+curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -d '{}'
 ```
 
 Applications.Api applies EF Core migrations on startup (see `Program.cs`), so the schema is
@@ -59,10 +67,11 @@ created automatically the first time the stack comes up.
 
 ### 0. One-time: bootstrap remote state
 
-`infra/terraform` stores its state in S3 (with DynamoDB locking) so that both your
-machine and the ephemeral GitHub Actions runners share the same state instead of each
-starting from blank. That S3 bucket/table has to exist *before* `infra/terraform` can
-initialize, so it lives in its own tiny, separately-stated config:
+`infra/terraform` stores its state in S3 (locking included — Terraform 1.10+'s S3 backend
+locks via S3's own conditional writes, no DynamoDB table needed) so that both your machine
+and the ephemeral GitHub Actions runners share the same state instead of each starting
+from blank. That S3 bucket has to exist *before* `infra/terraform` can initialize, so it
+lives in its own tiny, separately-stated config:
 
 ```bash
 cd infra/terraform-bootstrap
@@ -87,12 +96,37 @@ remember to set — whichever workspace is selected *is* the environment.
 cd infra/terraform
 terraform init
 terraform workspace new dev       # or: terraform workspace select dev
+```
+
+**Every new environment needs one extra step before its first full apply.** Everything
+in this stack is ECS-based except `DailyStaleReportJob`, which runs as a Lambda
+container image (`infra/terraform/lambda.tf`) — and unlike an ECS task definition,
+Lambda validates at creation time that its image already exists in ECR. On a brand-new
+workspace the ECR repo is empty, so a straight `terraform apply` fails on that one
+resource. Create just the ECR repos first, seed that one repo with a real image, then
+apply everything else:
+
+```bash
+terraform apply -target=aws_ecr_repository.service -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
+
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+docker build -f workers/DailyStaleReportJob/Dockerfile \
+  -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/northbridge/dev/daily-stale-report-job:latest .
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/northbridge/dev/daily-stale-report-job:latest
+
 terraform plan  -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
 terraform apply -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
 ```
 
-Repeat `terraform workspace new staging` / `prod` and apply again to stand up the other
-environments — each gets its own VPC, database, buckets, queues, and ECS cluster.
+(`northbridge/dev/...` above assumes the `dev` workspace — swap the path segment to
+match whichever workspace you're applying.) After this first apply, `workers-ci-cd.yml`
+keeps that Lambda's code up to date on every push — you only do this manual seed once,
+the first time a given environment is created.
+
+Repeat the whole sequence (`terraform workspace new staging` / `prod`, ECR seed, apply)
+to stand up the other environments — each gets its own VPC, database, buckets, queues,
+and ECS cluster.
 
 **Account-wide resources are the one exception.** The GitHub OIDC provider and the two
 CI/CD IAM roles (`infra/terraform/github_oidc.tf`) are IAM objects whose *names* are
@@ -115,6 +149,27 @@ fronts both its S3 bucket *and* the ALB (see `infra/terraform/cloudfront_fronten
 terminating HTTPS with CloudFront's own free default certificate. Each environment is
 reachable from its own CloudFront URL alone — `terraform output applicant_portal_cloudfront_domain`
 / `reviewer_console_cloudfront_domain` — no domain purchase or Route 53 record required.
+
+### Known gotchas on a real account
+
+- **S3 bucket names aren't guaranteed free.** The 5 buckets this stack creates
+  (`northbridge-raw-documents-<env>`, `-generated-documents-`, `-reports-`,
+  `-applicant-portal-`, `-reviewer-console-`) are only suffixed by environment, not by
+  account ID — S3's bucket namespace is global across every AWS account, so on the
+  (unlikely but possible) chance one of these exact names is already taken by someone
+  else, `terraform apply` fails on that resource with `BucketAlreadyExists`. Fix by
+  editing the bucket name in `s3.tf` / `cloudfront_frontend.tf` and re-applying.
+- **SES starts in sandbox mode.** `NotificationWorker` sends real email via SES, but
+  Terraform doesn't provision domain/email verification. Until you verify a sender
+  identity in the SES console (and, while still in sandbox, verify recipients too, or
+  request production access), notifications will fail at send time — the rest of the
+  app is unaffected. Override `-var="notification_sender_email=<a verified address>"`;
+  the placeholder default (`notifications@northbridgelending.com`) is a domain you
+  don't own and can't verify.
+- **This isn't free-tier.** RDS Multi-AZ, a NAT Gateway, an ALB, and several interface
+  VPC endpoints all bill by the hour regardless of traffic — expect real (if modest,
+  low tens of USD/month per environment) cost the moment `apply` finishes, not just
+  when the app is used. `terraform destroy` when you're done experimenting.
 
 ## CI/CD (GitHub Actions)
 

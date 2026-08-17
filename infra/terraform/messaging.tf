@@ -188,20 +188,8 @@ resource "aws_scheduler_schedule" "daily_stale_report" {
   }
 
   target {
-    arn      = aws_ecs_cluster.main.arn
+    arn      = aws_lambda_function.daily_stale_report.arn
     role_arn = aws_iam_role.scheduler_run_task.arn
-
-    ecs_parameters {
-      task_definition_arn = aws_ecs_task_definition.daily_stale_report_job.arn
-      launch_type         = "FARGATE"
-      task_count          = 1
-
-      network_configuration {
-        subnets          = [for s in aws_subnet.private_app : s.id]
-        security_groups  = [aws_security_group.ecs_worker.id]
-        assign_public_ip = false
-      }
-    }
 
     retry_policy {
       maximum_retry_attempts = 0 # the job's own Postgres advisory lock makes retries redundant / risky

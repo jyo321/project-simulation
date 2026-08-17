@@ -134,20 +134,8 @@ resource "aws_iam_role_policy" "status_projector_worker" {
   })
 }
 
-resource "aws_iam_role" "daily_stale_report_job" {
-  name               = "northbridge-daily-stale-report-job-task-role-${local.environment}"
-  assume_role_policy = data.aws_iam_policy_document.task_assume.json
-}
-
-resource "aws_iam_role_policy" "daily_stale_report_job" {
-  role = aws_iam_role.daily_stale_report_job.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      { Effect = "Allow", Action = ["s3:PutObject"], Resource = ["${aws_s3_bucket.reports.arn}/*"] },
-    ]
-  })
-}
+# The daily stale-report job's task role lives in lambda.tf now (daily_stale_report_lambda)
+# — it runs as a Lambda function, not an ECS task.
 
 resource "aws_iam_role" "credit_scoring_job" {
   name               = "northbridge-credit-scoring-job-task-role-${local.environment}"
@@ -220,13 +208,13 @@ resource "aws_iam_role" "scheduler_run_task" {
   assume_role_policy = data.aws_iam_policy_document.scheduler_assume.json
 }
 
+# The daily stale-report job it triggers is a Lambda function now, not ecs:RunTask.
 resource "aws_iam_role_policy" "scheduler_run_task" {
   role = aws_iam_role.scheduler_run_task.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Effect = "Allow", Action = ["ecs:RunTask"], Resource = ["*"] },
-      { Effect = "Allow", Action = ["iam:PassRole"], Resource = [aws_iam_role.ecs_task_execution.arn, aws_iam_role.daily_stale_report_job.arn] },
+      { Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = [aws_lambda_function.daily_stale_report.arn] },
     ]
   })
 }

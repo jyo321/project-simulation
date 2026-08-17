@@ -146,6 +146,12 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         Action   = ["cloudfront:CreateInvalidation"]
         Resource = "*" # CloudFront distribution IDs vary per environment; ARNs aren't practical to enumerate here
       },
+      {
+        Sid      = "DeployLambdaJobs"
+        Effect   = "Allow"
+        Action   = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
+        Resource = ["arn:aws:lambda:*:*:function:northbridge-daily-stale-report-*"]
+      },
     ]
   })
 }

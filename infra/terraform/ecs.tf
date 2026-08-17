@@ -243,6 +243,14 @@ resource "aws_ecs_service" "applications_api" {
   deployment_maximum_percent         = 200
 
   depends_on = [aws_lb_listener_rule.applications_api]
+
+  # api-ci-cd.yml deploys by registering a new task-def revision and updating the
+  # service directly (aws-actions/amazon-ecs-deploy-task-definition) — out-of-band
+  # from Terraform. Without this, the next `terraform apply` would see that drift
+  # and roll the service back to the revision Terraform itself created.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
 
 resource "aws_ecs_task_definition" "documents_api" {
@@ -302,6 +310,10 @@ resource "aws_ecs_service" "documents_api" {
   deployment_maximum_percent         = 200
 
   depends_on = [aws_lb_listener_rule.documents_api]
+
+  lifecycle {
+    ignore_changes = [task_definition] # see applications_api's service for why
+  }
 }
 
 resource "aws_ecs_task_definition" "decisioning_api" {
@@ -359,6 +371,10 @@ resource "aws_ecs_service" "decisioning_api" {
   deployment_maximum_percent         = 200
 
   depends_on = [aws_lb_listener_rule.decisioning_reviewer_queue, aws_lb_listener_rule.decisioning_decision]
+
+  lifecycle {
+    ignore_changes = [task_definition] # see applications_api's service for why
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -409,6 +425,10 @@ resource "aws_ecs_service" "document_validation_worker" {
     security_groups  = [aws_security_group.ecs_worker.id]
     assign_public_ip = false
   }
+
+  lifecycle {
+    ignore_changes = [task_definition] # see applications_api's service for why
+  }
 }
 
 resource "aws_ecs_task_definition" "status_projector_worker" {
@@ -452,6 +472,10 @@ resource "aws_ecs_service" "status_projector_worker" {
     subnets          = [for s in aws_subnet.private_app : s.id]
     security_groups  = [aws_security_group.ecs_worker.id]
     assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [task_definition] # see applications_api's service for why
   }
 }
 
@@ -498,44 +522,18 @@ resource "aws_ecs_service" "notification_worker" {
     security_groups  = [aws_security_group.ecs_worker.id]
     assign_public_ip = false
   }
+
+  lifecycle {
+    ignore_changes = [task_definition] # see applications_api's service for why
+  }
 }
 
 # ---------------------------------------------------------------------------
 # One-shot task definitions — invoked via ecs:RunTask, never as a standing service.
-# The scheduled job is triggered by EventBridge Scheduler (messaging.tf); the two
-# fire-and-forget jobs are triggered by EventBridge Pipes reading their SQS queue.
+# The two fire-and-forget jobs are triggered by EventBridge Pipes reading their SQS
+# queue. The scheduled daily report job runs as Lambda instead (lambda.tf) — see the
+# comment there for why.
 # ---------------------------------------------------------------------------
-
-resource "aws_ecs_task_definition" "daily_stale_report_job" {
-  family                   = "northbridge-daily-stale-report-job-${local.environment}"
-  requires_compatibilities = ["FARGATE"]
-  network_mode             = "awsvpc"
-  cpu                      = 512
-  memory                   = 1024
-  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
-  task_role_arn            = aws_iam_role.daily_stale_report_job.arn
-
-  container_definitions = jsonencode([{
-    name      = "daily-stale-report-job"
-    image     = "${local.ecr_uri["daily-stale-report-job"]}:${var.container_image_tag}"
-    essential = true
-    secrets = [
-      { name = "ConnectionStrings__Northbridge", valueFrom = "${aws_secretsmanager_secret.db_credentials.arn}:connectionString::" },
-    ]
-    environment = [
-      { name = "Job__StaleAfterDays", value = tostring(var.stale_after_days) },
-      { name = "Job__ReportsBucket", value = aws_s3_bucket.reports.bucket },
-    ]
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        "awslogs-group"         = aws_cloudwatch_log_group.service["daily-stale-report-job"].name
-        "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "ecs"
-      }
-    }
-  }])
-}
 
 resource "aws_ecs_task_definition" "credit_scoring_job" {
   family                   = "northbridge-credit-scoring-job-${local.environment}"

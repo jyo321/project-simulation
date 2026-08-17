@@ -66,7 +66,7 @@ pattern for the frontend's direct-to-storage upload/download requirement.
 | 5 | Decisioning API (.NET) | ECS Fargate service behind ALB | Same cluster, separate service/task def |
 | 6 | Document Validation Worker | ECS Fargate task, SQS-driven (long-polling `IHostedService` loop, min 1 task, scales on queue depth) | Service-triggered |
 | 7 | Application Status Projector | ECS Fargate task, SQS-driven (subscribed to an SNS topic fed by EventBridge/API events) | Service-triggered |
-| 8 | Daily Stale-Application Report | EventBridge Scheduler (cron) → ECS `RunTask` (one-shot) | Time-based |
+| 8 | Daily Stale-Application Report | EventBridge Scheduler (cron) → Lambda (container image) | Time-based |
 | 9 | Credit Scoring & Risk Job | SQS queue → EventBridge Pipe → ECS `RunTask` (one-shot, high CPU/mem, no timeout) | Fire-and-forget, >20min |
 | 10 | Document Fraud/Forensics Job | SQS queue → EventBridge Pipe → ECS `RunTask` (one-shot, high CPU/mem, no timeout) | Fire-and-forget, >20min |
 | 11 | Core database | RDS for PostgreSQL 16, Multi-AZ | Private subnets, automated backups, IAM auth optional |
@@ -144,11 +144,11 @@ flowchart TB
     SQS_Credit -->|EventBridge Pipe| ECS_RunTask1[ECS RunTask:\nCreditScoringJob\n>20min, high CPU/mem]
     SQS_Fraud -->|EventBridge Pipe| ECS_RunTask2[ECS RunTask:\nFraudForensicsJob\n>20min, high CPU/mem]
 
-    EBSched[EventBridge Scheduler\ncron: daily 02:00 UTC] --> ECS_RunTask3[ECS RunTask:\nDailyStaleReportJob]
+    EBSched[EventBridge Scheduler\ncron: daily 02:00 UTC] --> Lambda1[Lambda:\nDailyStaleReportJob]
 
     ECS_RunTask1 --> RDS
     ECS_RunTask2 --> RDS
-    ECS_RunTask3 --> RDS
+    Lambda1 --> RDS
     DocWorker --> RDS
     StatusWorker --> RDS
 
@@ -156,7 +156,7 @@ flowchart TB
     ECS_RunTask2 --> S3Raw
     ECS_RunTask2 --> S3Gen[(S3: generated-documents)]
     DeciAPI --> S3Gen
-    ECS_RunTask3 --> S3Rep[(S3: reports)]
+    Lambda1 --> S3Rep[(S3: reports)]
 
     NotifWorker --> SES[Amazon SES: email]
     NotifWorker --> SNSSMS[Amazon SNS: SMS]
@@ -198,9 +198,15 @@ Both are "reliable response to a trigger" workloads — SQS's at-least-once deli
 ### 5.2 Time-based (1)
 
 **Daily Stale-Application Report** — an **EventBridge Scheduler** rule
-(`cron(0 2 * * ? *)`, i.e. 02:00 UTC daily) invokes `ecs:RunTask` directly (no Lambda
-shim needed — EventBridge Scheduler can target ECS RunTask natively) with the
-`DailyStaleReportJob` task definition. The job is a one-shot program, not a daemon.
+(`cron(0 2 * * ? *)`, i.e. 02:00 UTC daily) invokes the `DailyStaleReportJob` **Lambda
+function** directly via the schedule's IAM role (`lambda:InvokeFunction`), the same
+customer-managed-role invocation model the fire-and-forget jobs' EventBridge Pipes use
+for `ecs:RunTask`. Lambda over a standing ECS task definition here because the job is
+short, low-resource, and runs once a day — no cluster/service to manage, and no idle
+compute billed between runs. It's packaged as a container image (not a zip) so it
+reuses the same ECR-push CI flow as every other service in this stack, and it's
+attached to the private app subnets so it can reach RDS and (via the S3 gateway
+endpoint) write its report with no NAT/internet egress needed.
 
 **Preventing double-fire**: EventBridge Scheduler itself has at-least-once semantics,
 and ECS `RunTask` could theoretically be invoked twice (retried delivery, manual
@@ -323,7 +329,9 @@ different consumer).
 credit-bureau API key live in **AWS Secrets Manager**, injected into ECS tasks as
 `secrets` (not `environment`) in the task definition, so values never appear in
 `ecs describe-task-definition` output in plaintext logs and rotate independently of
-a deploy.
+a deploy. Lambda has no equivalent of the ECS `secrets` block, so the one Lambda in
+this stack (`DailyStaleReportJob`) instead fetches the DB credentials itself at cold
+start via `secretsmanager:GetSecretValue`, scoped by IAM to that one secret's ARN.
 
 **Authentication**: **Amazon Cognito** — two user pools, `applicants` and
 `reviewers`, issuing JWTs on login. The Angular SPAs use the Cognito Hosted UI /

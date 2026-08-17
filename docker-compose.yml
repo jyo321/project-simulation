@@ -141,15 +141,24 @@ services:
       postgres: { condition: service_healthy }
       localstack: { condition: service_healthy }
 
-  # The three one-shot jobs are NOT long-running services in real AWS (they're invoked via
-  # ecs:RunTask — see infra/terraform/messaging.tf). Here they're modeled as `profiles`-gated
-  # one-off containers: run them on demand with, e.g.,
+  # The two fire-and-forget jobs below are NOT long-running services in real AWS (they're
+  # invoked via ecs:RunTask — see infra/terraform/messaging.tf). Here they're modeled as
+  # `profiles`-gated one-off containers: run them on demand with, e.g.,
   #   docker compose run --rm -e JOB_ID=... -e LOAN_APPLICATION_ID=... credit-scoring-job
+  #
+  # daily-stale-report-job is different: it runs as AWS Lambda in real AWS (infra/terraform/
+  # lambda.tf), so its image is built FROM the public.ecr.aws/lambda/dotnet base image, which
+  # bundles the Lambda Runtime Interface Emulator. Start it like a normal service, then invoke
+  # it with a curl POST instead of `docker compose run`:
+  #   docker compose up -d daily-stale-report-job
+  #   curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -d '{}'
   daily-stale-report-job:
     build:
       context: .
       dockerfile: workers/DailyStaleReportJob/Dockerfile
     profiles: ["jobs"]
+    ports:
+      - "9000:8080"
     environment:
       <<: *dotnet-aws-env
       Job__StaleAfterDays: "5"

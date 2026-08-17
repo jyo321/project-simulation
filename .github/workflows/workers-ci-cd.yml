@@ -2,10 +2,12 @@ name: Background Services CI/CD
 
 # Covers all 5 background services plus the Notification Worker. The three standing-service
 # workers (document/status/notification) roll like the APIs — new task-def revision, then
-# ecs update-service. The three one-shot job images (daily report, credit scoring, fraud
-# forensics) are invoked via ecs:RunTask, not a service — pushing a new sha-tagged image and
-# registering it as the new task-definition revision is enough; the next EventBridge
-# Scheduler / Pipes invocation picks it up automatically, with no service to roll.
+# ecs update-service. The two fire-and-forget job images (credit scoring, fraud forensics)
+# are invoked via ecs:RunTask, not a service — pushing a new sha-tagged image and registering
+# it as the new task-definition revision is enough; the next EventBridge Pipes invocation
+# picks it up automatically, with no service to roll. The daily report job runs as a Lambda
+# container image instead (infra/terraform/lambda.tf) — deploying it is a plain
+# `aws lambda update-function-code`, no task definition involved.
 on:
   push:
     branches: [main]
@@ -85,7 +87,8 @@ jobs:
           - project: DailyStaleReportJob
             path: workers/DailyStaleReportJob
             image: daily-stale-report-job
-            kind: job
+            kind: lambda
+            lambda_function: daily-stale-report
           - project: CreditScoringJob
             path: workers/CreditScoringJob
             image: credit-scoring-job
@@ -115,6 +118,7 @@ jobs:
 
       - name: Render new task definition
         id: render-task-def
+        if: matrix.kind != 'lambda'
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition-family: northbridge-${{ matrix.image }}-${{ env.TARGET_ENV }}
@@ -138,3 +142,16 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+
+      # No task definition involved — this one's a Lambda container image (see
+      # infra/terraform/lambda.tf), so the deploy step is just pointing the function
+      # at the newly-pushed image digest.
+      - name: Deploy to Lambda
+        if: matrix.kind == 'lambda'
+        run: |
+          aws lambda update-function-code \
+            --function-name "northbridge-${{ matrix.lambda_function }}-${{ env.TARGET_ENV }}" \
+            --image-uri "${{ steps.build-image.outputs.image_uri }}" \
+            --no-cli-pager
+          aws lambda wait function-updated \
+            --function-name "northbridge-${{ matrix.lambda_function }}-${{ env.TARGET_ENV }}"
