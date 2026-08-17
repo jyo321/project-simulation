@@ -8,9 +8,13 @@ import { DecisioningService, ReviewerQueueItem } from '../../services/decisionin
   standalone: true,
   imports: [NgFor, NgIf, RouterLink, DecimalPipe],
   template: `
-    <div class="page">
-      <h1>Reviewer queue</h1>
-      <table>
+    <div class="page page-wide">
+      <div class="page-header">
+        <h1>Reviewer queue</h1>
+        <p class="page-subtitle">{{ queue.length }} application{{ queue.length === 1 ? '' : 's' }} awaiting review.</p>
+      </div>
+
+      <table *ngIf="queue.length">
         <thead>
           <tr>
             <th>Applicant</th>
@@ -25,14 +29,16 @@ import { DecisioningService, ReviewerQueueItem } from '../../services/decisionin
             <td>{{ item.applicantName }}</td>
             <td>{{ item.requestedAmount | number: '1.0-0' }}</td>
             <td>
-              {{ item.status }}
-              <span class="badge-fraud" *ngIf="item.fraudFlagged">⚠ fraud flagged</span>
+              <span class="status-badge" [class]="'status-' + item.status.toLowerCase()">{{ item.status }}</span>
+              <span class="badge-fraud" *ngIf="item.fraudFlagged">⚠ Fraud flagged</span>
             </td>
-            <td>{{ item.riskScore ?? 'pending' }}</td>
-            <td><a [routerLink]="['/applications', item.loanApplicationId, 'review']">Review</a></td>
+            <td>{{ item.riskScore ?? 'Pending' }}</td>
+            <td><a class="btn-link" [routerLink]="['/applications', item.loanApplicationId, 'review']">Review →</a></td>
           </tr>
         </tbody>
       </table>
+
+      <div class="empty-state" *ngIf="!queue.length">Nothing waiting on you right now.</div>
     </div>
   `,
 })

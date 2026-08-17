@@ -11,24 +11,38 @@ import { ApplicationsService } from '../../services/applications.service';
   imports: [FormsModule, NgIf],
   template: `
     <div class="page">
-      <h1>Apply for a loan</h1>
+      <div class="page-header">
+        <h1>Apply for a loan</h1>
+        <p class="page-subtitle">Tell us a bit about yourself and how much you're looking to borrow — it takes about a minute.</p>
+      </div>
+
+      <p *ngIf="error" class="alert alert-error">{{ error }}</p>
+
       <form (ngSubmit)="submit()">
-        <label>First name<input name="firstName" [(ngModel)]="firstName" required /></label>
-        <label>Last name<input name="lastName" [(ngModel)]="lastName" required /></label>
-        <label>Email<input name="email" type="email" [(ngModel)]="email" required /></label>
-        <label>Phone<input name="phone" [(ngModel)]="phone" required /></label>
-        <label>Requested amount (USD)<input name="amount" type="number" [(ngModel)]="requestedAmount" required /></label>
-        <label>Purpose
-          <select name="purpose" [(ngModel)]="purpose" required>
-            <option value="Home Improvement">Home Improvement</option>
-            <option value="Debt Consolidation">Debt Consolidation</option>
-            <option value="Auto">Auto</option>
-            <option value="Other">Other</option>
-          </select>
-        </label>
-        <button type="submit" [disabled]="submitting">{{ submitting ? 'Submitting…' : 'Submit application' }}</button>
+        <div class="field-row">
+          <label>First name<input name="firstName" [(ngModel)]="firstName" required /></label>
+          <label>Last name<input name="lastName" [(ngModel)]="lastName" required /></label>
+        </div>
+        <div class="field-row">
+          <label>Email<input name="email" type="email" [(ngModel)]="email" required /></label>
+          <label>Phone<input name="phone" [(ngModel)]="phone" required /></label>
+        </div>
+        <div class="field-row">
+          <label>Requested amount (USD)<input name="amount" type="number" min="0" [(ngModel)]="requestedAmount" required /></label>
+          <label>
+            Purpose
+            <select name="purpose" [(ngModel)]="purpose" required>
+              <option value="Home Improvement">Home Improvement</option>
+              <option value="Debt Consolidation">Debt Consolidation</option>
+              <option value="Auto">Auto</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit" [disabled]="submitting">
+          <span class="spinner" *ngIf="submitting"></span>{{ submitting ? 'Submitting…' : 'Submit application' }}
+        </button>
       </form>
-      <p *ngIf="error" style="color: #b00020">{{ error }}</p>
     </div>
   `,
 })

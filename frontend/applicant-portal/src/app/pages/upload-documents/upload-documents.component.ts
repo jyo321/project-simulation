@@ -1,28 +1,35 @@
-import { NgFor } from '@angular/common';
+import { NgFor, NgIf } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DocumentRecord, DocumentsService } from '../../services/documents.service';
 
 @Component({
   selector: 'app-upload-documents',
   standalone: true,
-  imports: [NgFor, RouterLink],
+  imports: [NgFor, NgIf, RouterLink],
   template: `
     <div class="page">
-      <h1>Upload your documents</h1>
-      <p>Upload all three required documents. Once all three are in, our fraud/forensics check
-      kicks off automatically in the background.</p>
-
-      <div *ngFor="let type of requiredTypes">
-        <label>{{ type }}</label>
-        <input type="file" (change)="onFileSelected($event, type)" [disabled]="uploading" />
+      <div class="page-header">
+        <h1>Upload your documents</h1>
+        <p class="page-subtitle">
+          Upload all three required documents. Once all three are in, our fraud/forensics check kicks off automatically in the background.
+        </p>
       </div>
 
-      <ul>
-        <li *ngFor="let doc of uploadedDocuments">{{ doc.type }} — {{ doc.status }}</li>
-      </ul>
+      <div class="upload-doc-row" *ngFor="let type of requiredTypes">
+        <label>{{ type }}<input type="file" (change)="onFileSelected($event, type)" [disabled]="uploading" /></label>
+      </div>
 
-      <a [routerLink]="['/applications', applicationId, 'status']">Continue to status tracking</a>
+      <h3>Uploaded so far</h3>
+      <ul class="upload-list" *ngIf="uploadedDocuments.length">
+        <li class="upload-item" *ngFor="let doc of uploadedDocuments">
+          <span class="upload-item-name">{{ doc.type }}</span>
+          <span class="status-badge">{{ doc.status }}</span>
+        </li>
+      </ul>
+      <p *ngIf="!uploadedDocuments.length" style="margin-top: 0">No documents uploaded yet.</p>
+
+      <a class="btn-link" [routerLink]="['/applications', applicationId, 'status']">Continue to status tracking →</a>
     </div>
   `,
 })
@@ -34,7 +41,6 @@ export class UploadDocumentsComponent implements OnInit {
 
   constructor(
     private readonly route: ActivatedRoute,
-    private readonly router: Router,
     private readonly documents: DocumentsService,
   ) {}
 

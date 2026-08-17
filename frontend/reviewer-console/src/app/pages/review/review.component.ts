@@ -11,20 +11,24 @@ import { DocumentRecord, DocumentsService } from '../../services/documents.servi
   imports: [NgFor, NgIf, FormsModule],
   template: `
     <div class="page">
-      <h1>Review application</h1>
+      <div class="page-header">
+        <h1>Review application</h1>
+        <p class="page-subtitle">Check the submitted documents, then approve or reject with a reason.</p>
+      </div>
 
       <h3>Documents</h3>
-      <ul>
+      <ul class="doc-list" *ngIf="documents.length">
         <li *ngFor="let doc of documents">
-          {{ doc.type }} — {{ doc.status }}
-          <button (click)="openDocument(doc.id)">View</button>
+          <span class="upload-item-name">{{ doc.type }} <span class="status-badge">{{ doc.status }}</span></span>
+          <button class="secondary" (click)="openDocument(doc.id)">View</button>
         </li>
       </ul>
+      <p *ngIf="!documents.length" style="margin-top: 0">No documents uploaded yet.</p>
 
       <h3>Decision</h3>
-      <label>Reason<textarea [(ngModel)]="reason"></textarea></label>
+      <label>Reason<textarea [(ngModel)]="reason" placeholder="Why are you approving or rejecting this application?"></textarea></label>
       <button class="approve" (click)="decide('Approved')" [disabled]="deciding">Approve</button>
-      <button class="reject" (click)="decide('Rejected')" [disabled]="deciding">Reject</button>
+      <button class="reject" (click)="decide('Rejected')" [disabled]="deciding" style="margin-left: 10px">Reject</button>
     </div>
   `,
 })

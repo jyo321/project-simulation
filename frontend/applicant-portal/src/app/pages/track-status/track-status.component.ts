@@ -1,4 +1,4 @@
-import { NgIf } from '@angular/common';
+import { DatePipe, NgIf } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Subscription, interval } from 'rxjs';
@@ -8,13 +8,27 @@ import { ApplicationsService, LoanApplication } from '../../services/application
 @Component({
   selector: 'app-track-status',
   standalone: true,
-  imports: [NgIf],
+  imports: [NgIf, DatePipe],
   template: `
     <div class="page" *ngIf="application">
-      <h1>Application status</h1>
-      <p>Status: <span class="status-badge">{{ application.status }}</span></p>
-      <p *ngIf="application.riskScore !== null">Risk score: {{ application.riskScore }}</p>
-      <p>Submitted: {{ application.submittedAt }}</p>
+      <div class="page-header">
+        <h1>Application status</h1>
+        <p class="page-subtitle">This page refreshes automatically as your application moves through review.</p>
+      </div>
+
+      <span class="status-badge" [class]="'status-' + application.status.toLowerCase()">{{ application.status }}</span>
+
+      <div class="stat-row">
+        <div class="stat">
+          <span class="stat-label">Risk score</span>
+          <span class="stat-value">{{ application.riskScore !== null ? application.riskScore : '—' }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Submitted</span>
+          <span class="stat-value">{{ application.submittedAt ? (application.submittedAt | date: 'mediumDate') : 'Not yet' }}</span>
+        </div>
+      </div>
+
       <button *ngIf="application.status === 'Draft'" (click)="submit()">Submit application</button>
     </div>
   `,
