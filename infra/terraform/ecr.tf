@@ -15,7 +15,7 @@ locals {
 resource "aws_ecr_repository" "service" {
   for_each = toset(local.service_images)
 
-  name                 = "northbridge/${each.key}"
+  name                 = "northbridge/${local.environment}/${each.key}"
   image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {

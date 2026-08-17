@@ -3,6 +3,10 @@ name: Infra CI/CD
 # Kept deliberately separate from the app pipelines (docs/architecture.md §9): a network or
 # schema change should never ship silently bundled with an application deploy. Plan runs on
 # every PR; apply requires the `infra-prod` environment's manual approval gate.
+#
+# Targets one Terraform workspace/environment per run — defaults to "prod" for the
+# push-to-main trigger, and can be overridden for a manual run (Actions tab → Run workflow)
+# to plan/apply against dev or staging instead.
 on:
   push:
     branches: [main]
@@ -11,10 +15,20 @@ on:
   pull_request:
     paths:
       - "infra/terraform/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Terraform workspace to target"
+        required: false
+        default: "prod"
+        type: string
 
 defaults:
   run:
     working-directory: infra/terraform
+
+env:
+  TARGET_ENV: ${{ inputs.environment || 'prod' }}
 
 jobs:
   # Runs on PRs too — no AWS credentials needed for fmt/validate, so PRs (which the
@@ -29,8 +43,8 @@ jobs:
       - run: terraform init -backend=false
       - run: terraform validate
 
-  # Only runs on push to main — this is the only trigger the OIDC trust policy
-  # (repo:<owner>/<repo>:ref:refs/heads/main) actually authorizes.
+  # Only runs on push to main (or a manual dispatch) — this is the only trigger the OIDC
+  # trust policy (repo:<owner>/<repo>:ref:refs/heads/main) actually authorizes.
   plan:
     needs: validate
     if: github.ref == 'refs/heads/main'
@@ -45,6 +59,9 @@ jobs:
           aws-region: us-east-1
 
       - run: terraform init
+      # Selects the workspace this run targets, creating it the first time it's ever used
+      # (e.g. the very first "staging" run) instead of failing because it doesn't exist yet.
+      - run: terraform workspace select "$TARGET_ENV" || terraform workspace new "$TARGET_ENV"
       - run: terraform plan -input=false -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"
 
   apply:
@@ -62,4 +79,5 @@ jobs:
           aws-region: us-east-1
 
       - run: terraform init
+      - run: terraform workspace select "$TARGET_ENV" || terraform workspace new "$TARGET_ENV"
       - run: terraform apply -input=false -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"

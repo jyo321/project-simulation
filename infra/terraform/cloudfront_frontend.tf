@@ -16,11 +16,11 @@ resource "random_password" "origin_verify" {
 locals {
   spas = {
     applicant_portal = {
-      bucket_name = "northbridge-applicant-portal-${var.environment}"
+      bucket_name = "northbridge-applicant-portal-${local.environment}"
       comment     = "Northbridge Applicant Portal"
     }
     reviewer_console = {
-      bucket_name = "northbridge-reviewer-console-${var.environment}"
+      bucket_name = "northbridge-reviewer-console-${local.environment}"
       comment     = "Northbridge Reviewer Console"
     }
   }
@@ -45,7 +45,7 @@ resource "aws_s3_bucket_public_access_block" "spa" {
 resource "aws_cloudfront_origin_access_control" "spa" {
   for_each = local.spas
 
-  name                              = "northbridge-${each.key}-oac"
+  name                              = "northbridge-${each.key}-${local.environment}-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"

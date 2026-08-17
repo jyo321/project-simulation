@@ -9,15 +9,24 @@
 #
 # Both roles trust only pushes to `main` in this specific repo — PRs never get AWS
 # credentials (the workflows' build/test steps run without them regardless).
+#
+# IMPORTANT — these are account-wide, NOT per-environment: an IAM role name is unique
+# per AWS account, not per Terraform workspace, so if every dev/staging/prod workspace
+# tried to create "northbridge-github-actions-deploy" independently, the second apply
+# would fail with "already exists". Everything in this file is gated behind
+# create_shared_resources, which you set =true in exactly ONE workspace (pick whichever
+# you'll treat as authoritative, e.g. prod) and leave at its default (false) everywhere else.
 
-variable "github_repo" {
-  description = "GitHub repo these OIDC roles trust, as \"owner/repo\" — e.g. \"jyothiswaroop/project-simulation\"."
-  type        = string
+variable "create_shared_resources" {
+  description = "Create the account-wide GitHub OIDC provider + deploy roles. Set true in exactly one workspace, ever — see the file header comment."
+  type        = bool
+  default     = false
 }
 
-data "aws_iam_openid_connect_provider" "github_existing" {
-  count = var.github_oidc_provider_exists ? 1 : 0
-  url   = "https://token.actions.githubusercontent.com"
+variable "github_repo" {
+  description = "GitHub repo these OIDC roles trust, as \"owner/repo\" — e.g. \"jyo321/project-simulation\"."
+  type        = string
+  default     = ""
 }
 
 variable "github_oidc_provider_exists" {
@@ -26,8 +35,13 @@ variable "github_oidc_provider_exists" {
   default     = false
 }
 
+data "aws_iam_openid_connect_provider" "github_existing" {
+  count = var.create_shared_resources && var.github_oidc_provider_exists ? 1 : 0
+  url   = "https://token.actions.githubusercontent.com"
+}
+
 resource "aws_iam_openid_connect_provider" "github" {
-  count = var.github_oidc_provider_exists ? 0 : 1
+  count = var.create_shared_resources && !var.github_oidc_provider_exists ? 1 : 0
 
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
@@ -35,11 +49,15 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
-  github_oidc_provider_arn = var.github_oidc_provider_exists ? data.aws_iam_openid_connect_provider.github_existing[0].arn : aws_iam_openid_connect_provider.github[0].arn
-  github_main_branch_sub   = "repo:${var.github_repo}:ref:refs/heads/main"
+  github_oidc_provider_arn = var.create_shared_resources ? (
+    var.github_oidc_provider_exists ? data.aws_iam_openid_connect_provider.github_existing[0].arn : aws_iam_openid_connect_provider.github[0].arn
+  ) : null
+  github_main_branch_sub = "repo:${var.github_repo}:ref:refs/heads/main"
 }
 
 data "aws_iam_policy_document" "github_trust" {
+  count = var.create_shared_resources ? 1 : 0
+
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
 
@@ -67,12 +85,15 @@ data "aws_iam_policy_document" "github_trust" {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "github_actions_deploy" {
+  count = var.create_shared_resources ? 1 : 0
+
   name               = "northbridge-github-actions-deploy"
-  assume_role_policy = data.aws_iam_policy_document.github_trust.json
+  assume_role_policy = data.aws_iam_policy_document.github_trust[0].json
 }
 
 resource "aws_iam_role_policy" "github_actions_deploy" {
-  role = aws_iam_role.github_actions_deploy.id
+  count = var.create_shared_resources ? 1 : 0
+  role  = aws_iam_role.github_actions_deploy[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -91,7 +112,9 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:BatchGetImage",
           "ecr:GetDownloadUrlForLayer",
         ]
-        Resource = [for repo in aws_ecr_repository.service : repo.arn]
+        # Every environment's ECR repos, not just the one this role happened to be
+        # created from — this role is shared by every environment's app pipelines.
+        Resource = ["arn:aws:ecr:*:*:repository/northbridge/*"]
       },
       {
         Sid      = "EcsDeploy"
@@ -115,13 +138,13 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         Sid      = "SyncSpaBuckets"
         Effect   = "Allow"
         Action   = ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
-        Resource = flatten([for b in aws_s3_bucket.spa : [b.arn, "${b.arn}/*"]])
+        Resource = ["arn:aws:s3:::northbridge-applicant-portal-*", "arn:aws:s3:::northbridge-applicant-portal-*/*", "arn:aws:s3:::northbridge-reviewer-console-*", "arn:aws:s3:::northbridge-reviewer-console-*/*"]
       },
       {
         Sid      = "InvalidateCloudFront"
         Effect   = "Allow"
         Action   = ["cloudfront:CreateInvalidation"]
-        Resource = [for d in aws_cloudfront_distribution.spa : d.arn]
+        Resource = "*" # CloudFront distribution IDs vary per environment; ARNs aren't practical to enumerate here
       },
     ]
   })
@@ -132,12 +155,15 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "github_actions_terraform" {
+  count = var.create_shared_resources ? 1 : 0
+
   name               = "northbridge-github-actions-terraform"
-  assume_role_policy = data.aws_iam_policy_document.github_trust.json
+  assume_role_policy = data.aws_iam_policy_document.github_trust[0].json
 }
 
 resource "aws_iam_role_policy_attachment" "github_actions_terraform_power_user" {
-  role       = aws_iam_role.github_actions_terraform.name
+  count      = var.create_shared_resources ? 1 : 0
+  role       = aws_iam_role.github_actions_terraform[0].name
   policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
 }
 
@@ -145,7 +171,8 @@ resource "aws_iam_role_policy_attachment" "github_actions_terraform_power_user" 
 # IAM roles/policies (see iam.tf, this file), so the terraform role needs that back,
 # scoped to this project's naming convention plus the one-per-account OIDC provider.
 resource "aws_iam_role_policy" "github_actions_terraform_iam" {
-  role = aws_iam_role.github_actions_terraform.id
+  count = var.create_shared_resources ? 1 : 0
+  role  = aws_iam_role.github_actions_terraform[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -172,9 +199,9 @@ resource "aws_iam_role_policy" "github_actions_terraform_iam" {
 }
 
 output "github_actions_deploy_role_arn" {
-  value = aws_iam_role.github_actions_deploy.arn
+  value = try(aws_iam_role.github_actions_deploy[0].arn, "not created in this workspace — see create_shared_resources")
 }
 
 output "github_actions_terraform_role_arn" {
-  value = aws_iam_role.github_actions_terraform.arn
+  value = try(aws_iam_role.github_actions_terraform[0].arn, "not created in this workspace — see create_shared_resources")
 }

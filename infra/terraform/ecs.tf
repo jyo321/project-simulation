@@ -1,7 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_ecs_cluster" "main" {
-  name = "northbridge-cluster"
+  name = "northbridge-cluster-${local.environment}"
 
   setting {
     name  = "containerInsights"
@@ -12,7 +12,7 @@ resource "aws_ecs_cluster" "main" {
 resource "aws_cloudwatch_log_group" "service" {
   for_each = toset(local.service_images)
 
-  name              = "/northbridge/${each.key}"
+  name              = "/northbridge/${local.environment}/${each.key}"
   retention_in_days = 30
 }
 
@@ -27,7 +27,7 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "aws_lb" "main" {
-  name               = "northbridge-alb"
+  name               = "northbridge-alb-${local.environment}"
   load_balancer_type = "application"
   internal           = false
   subnets            = [for s in aws_subnet.public : s.id]
@@ -55,7 +55,9 @@ resource "aws_lb_listener" "http" {
 }
 
 resource "aws_lb_target_group" "applications_api" {
-  name        = "northbridge-applications-api"
+  # Target group names have a 32-char AWS limit — "nb-" instead of "northbridge-" buys
+  # enough room for "-${local.environment}" without truncating.
+  name        = "nb-apps-api-${local.environment}"
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
@@ -66,7 +68,7 @@ resource "aws_lb_target_group" "applications_api" {
 }
 
 resource "aws_lb_target_group" "documents_api" {
-  name        = "northbridge-documents-api"
+  name        = "nb-docs-api-${local.environment}"
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
@@ -77,7 +79,7 @@ resource "aws_lb_target_group" "documents_api" {
 }
 
 resource "aws_lb_target_group" "decisioning_api" {
-  name        = "northbridge-decisioning-api"
+  name        = "nb-deci-api-${local.environment}"
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
@@ -187,7 +189,7 @@ resource "aws_lb_listener_rule" "applications_api" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "applications_api" {
-  family                   = "northbridge-applications-api"
+  family                   = "northbridge-applications-api-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = var.api_task_cpu
@@ -244,7 +246,7 @@ resource "aws_ecs_service" "applications_api" {
 }
 
 resource "aws_ecs_task_definition" "documents_api" {
-  family                   = "northbridge-documents-api"
+  family                   = "northbridge-documents-api-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = var.api_task_cpu
@@ -303,7 +305,7 @@ resource "aws_ecs_service" "documents_api" {
 }
 
 resource "aws_ecs_task_definition" "decisioning_api" {
-  family                   = "northbridge-decisioning-api"
+  family                   = "northbridge-decisioning-api-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = var.api_task_cpu
@@ -366,7 +368,7 @@ resource "aws_ecs_service" "decisioning_api" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "document_validation_worker" {
-  family                   = "northbridge-document-validation-worker"
+  family                   = "northbridge-document-validation-worker-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
@@ -410,7 +412,7 @@ resource "aws_ecs_service" "document_validation_worker" {
 }
 
 resource "aws_ecs_task_definition" "status_projector_worker" {
-  family                   = "northbridge-status-projector-worker"
+  family                   = "northbridge-status-projector-worker-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
@@ -454,7 +456,7 @@ resource "aws_ecs_service" "status_projector_worker" {
 }
 
 resource "aws_ecs_task_definition" "notification_worker" {
-  family                   = "northbridge-notification-worker"
+  family                   = "northbridge-notification-worker-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 256
@@ -505,7 +507,7 @@ resource "aws_ecs_service" "notification_worker" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "daily_stale_report_job" {
-  family                   = "northbridge-daily-stale-report-job"
+  family                   = "northbridge-daily-stale-report-job-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = 512
@@ -536,7 +538,7 @@ resource "aws_ecs_task_definition" "daily_stale_report_job" {
 }
 
 resource "aws_ecs_task_definition" "credit_scoring_job" {
-  family                   = "northbridge-credit-scoring-job"
+  family                   = "northbridge-credit-scoring-job-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   # Sized well above the API tier per brief §2.3 note: these jobs run >20 min and need
@@ -571,7 +573,7 @@ resource "aws_ecs_task_definition" "credit_scoring_job" {
 }
 
 resource "aws_ecs_task_definition" "fraud_forensics_job" {
-  family                   = "northbridge-fraud-forensics-job"
+  family                   = "northbridge-fraud-forensics-job-${local.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = var.fire_and_forget_task_cpu

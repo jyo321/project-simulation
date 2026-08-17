@@ -13,10 +13,20 @@ on:
   pull_request:
     paths:
       - "backend/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Terraform workspace/environment to deploy to"
+        required: false
+        default: "prod"
+        type: string
 
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  # Must match the Terraform workspace whose ECR repos / ECS cluster you're deploying
+  # into (see infra/terraform/locals.tf) — everything below is named accordingly.
+  TARGET_ENV: ${{ inputs.environment || 'prod' }}
 
 jobs:
   build-test:
@@ -76,7 +86,7 @@ jobs:
         id: build-image
         working-directory: backend
         run: |
-          IMAGE_URI="$ECR_REGISTRY/northbridge/${{ matrix.image }}:${{ github.sha }}"
+          IMAGE_URI="$ECR_REGISTRY/northbridge/$TARGET_ENV/${{ matrix.image }}:${{ github.sha }}"
           docker build -f ${{ matrix.service }}/Dockerfile -t "$IMAGE_URI" .
           docker push "$IMAGE_URI"
           echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
@@ -89,7 +99,7 @@ jobs:
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition-family: northbridge-${{ matrix.image }}
+          task-definition-family: northbridge-${{ matrix.image }}-${{ env.TARGET_ENV }}
           container-name: ${{ matrix.image }}
           image: ${{ steps.build-image.outputs.image_uri }}
 
@@ -97,6 +107,6 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          cluster: northbridge-cluster
+          cluster: northbridge-cluster-${{ env.TARGET_ENV }}
           service: ${{ matrix.ecs_service }}
           wait-for-service-stability: true

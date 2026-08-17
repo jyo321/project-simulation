@@ -1,10 +1,10 @@
 resource "aws_db_subnet_group" "main" {
-  name       = "northbridge-db-subnets"
+  name       = "northbridge-db-subnets-${local.environment}"
   subnet_ids = [for s in aws_subnet.private_data : s.id]
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier     = "northbridge-postgres"
+  identifier     = "northbridge-postgres-${local.environment}"
   engine         = "postgres"
   engine_version = "16.4"
 
@@ -24,7 +24,7 @@ resource "aws_db_instance" "postgres" {
   backup_retention_period   = 7
   deletion_protection       = true
   skip_final_snapshot       = false
-  final_snapshot_identifier = "northbridge-postgres-final"
+  final_snapshot_identifier = "northbridge-postgres-final-${local.environment}"
 
-  tags = { Name = "northbridge-postgres" }
+  tags = { Name = "northbridge-postgres-${local.environment}" }
 }

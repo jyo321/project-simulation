@@ -18,7 +18,7 @@ data "aws_iam_policy_document" "ecs_task_execution_assume" {
 }
 
 resource "aws_iam_role" "ecs_task_execution" {
-  name               = "northbridge-ecs-task-execution"
+  name               = "northbridge-ecs-task-execution-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_execution_assume.json
 }
 
@@ -56,7 +56,7 @@ data "aws_iam_policy_document" "task_assume" {
 }
 
 resource "aws_iam_role" "applications_api" {
-  name               = "northbridge-applications-api-task-role"
+  name               = "northbridge-applications-api-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -72,7 +72,7 @@ resource "aws_iam_role_policy" "applications_api" {
 }
 
 resource "aws_iam_role" "documents_api" {
-  name               = "northbridge-documents-api-task-role"
+  name               = "northbridge-documents-api-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -89,7 +89,7 @@ resource "aws_iam_role_policy" "documents_api" {
 }
 
 resource "aws_iam_role" "decisioning_api" {
-  name               = "northbridge-decisioning-api-task-role"
+  name               = "northbridge-decisioning-api-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -105,7 +105,7 @@ resource "aws_iam_role_policy" "decisioning_api" {
 }
 
 resource "aws_iam_role" "document_validation_worker" {
-  name               = "northbridge-document-validation-worker-task-role"
+  name               = "northbridge-document-validation-worker-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -120,7 +120,7 @@ resource "aws_iam_role_policy" "document_validation_worker" {
 }
 
 resource "aws_iam_role" "status_projector_worker" {
-  name               = "northbridge-status-projector-worker-task-role"
+  name               = "northbridge-status-projector-worker-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -135,7 +135,7 @@ resource "aws_iam_role_policy" "status_projector_worker" {
 }
 
 resource "aws_iam_role" "daily_stale_report_job" {
-  name               = "northbridge-daily-stale-report-job-task-role"
+  name               = "northbridge-daily-stale-report-job-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -150,7 +150,7 @@ resource "aws_iam_role_policy" "daily_stale_report_job" {
 }
 
 resource "aws_iam_role" "credit_scoring_job" {
-  name               = "northbridge-credit-scoring-job-task-role"
+  name               = "northbridge-credit-scoring-job-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -167,7 +167,7 @@ resource "aws_iam_role_policy" "credit_scoring_job" {
 }
 
 resource "aws_iam_role" "fraud_forensics_job" {
-  name               = "northbridge-fraud-forensics-job-task-role"
+  name               = "northbridge-fraud-forensics-job-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -185,7 +185,7 @@ resource "aws_iam_role_policy" "fraud_forensics_job" {
 }
 
 resource "aws_iam_role" "notification_worker" {
-  name               = "northbridge-notification-worker-task-role"
+  name               = "northbridge-notification-worker-task-role-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.task_assume.json
 }
 
@@ -216,7 +216,7 @@ data "aws_iam_policy_document" "scheduler_assume" {
 }
 
 resource "aws_iam_role" "scheduler_run_task" {
-  name               = "northbridge-scheduler-run-task"
+  name               = "northbridge-scheduler-run-task-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.scheduler_assume.json
 }
 
@@ -246,7 +246,7 @@ data "aws_iam_policy_document" "pipes_assume" {
 }
 
 resource "aws_iam_role" "pipes_run_task" {
-  name               = "northbridge-pipes-run-task"
+  name               = "northbridge-pipes-run-task-${local.environment}"
   assume_role_policy = data.aws_iam_policy_document.pipes_assume.json
 }
 

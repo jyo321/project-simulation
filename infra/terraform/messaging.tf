@@ -4,11 +4,11 @@
 # fire-and-forget jobs into one-shot ECS tasks.
 
 resource "aws_sns_topic" "application_events" {
-  name = "northbridge-application-events"
+  name = "northbridge-application-events-${local.environment}"
 }
 
 resource "aws_sns_topic" "ops_alerts" {
-  name = "northbridge-ops-alerts"
+  name = "northbridge-ops-alerts-${local.environment}"
 }
 
 resource "aws_sns_topic_subscription" "ops_alerts_email" {
@@ -22,11 +22,11 @@ resource "aws_sns_topic_subscription" "ops_alerts_email" {
 # ---------------------------------------------------------------------------
 
 resource "aws_sqs_queue" "document_validation_dlq" {
-  name = "document-validation-dlq"
+  name = "document-validation-dlq-${local.environment}"
 }
 
 resource "aws_sqs_queue" "document_validation" {
-  name                       = "document-validation"
+  name                       = "document-validation-${local.environment}"
   visibility_timeout_seconds = 60
 
   redrive_policy = jsonencode({
@@ -40,11 +40,11 @@ resource "aws_sqs_queue" "document_validation" {
 # ---------------------------------------------------------------------------
 
 resource "aws_sqs_queue" "status_projector_dlq" {
-  name = "status-projector-dlq"
+  name = "status-projector-dlq-${local.environment}"
 }
 
 resource "aws_sqs_queue" "status_projector" {
-  name                       = "status-projector"
+  name                       = "status-projector-${local.environment}"
   visibility_timeout_seconds = 30
 
   redrive_policy = jsonencode({
@@ -70,11 +70,11 @@ resource "aws_sns_topic_subscription" "status_projector" {
 # ---------------------------------------------------------------------------
 
 resource "aws_sqs_queue" "notifications_dlq" {
-  name = "notifications-dlq"
+  name = "notifications-dlq-${local.environment}"
 }
 
 resource "aws_sqs_queue" "notifications" {
-  name                       = "notifications"
+  name                       = "notifications-${local.environment}"
   visibility_timeout_seconds = 60
 
   redrive_policy = jsonencode({
@@ -123,7 +123,7 @@ data "aws_iam_policy_document" "sns_to_sqs" {
 
 # Failure alerting (brief §5.4 / docs/architecture.md §7): DLQ depth >= 1 pages ops.
 resource "aws_cloudwatch_metric_alarm" "notifications_dlq_depth" {
-  alarm_name          = "northbridge-notifications-dlq-depth"
+  alarm_name          = "northbridge-notifications-dlq-depth-${local.environment}"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 1
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -144,11 +144,11 @@ resource "aws_cloudwatch_metric_alarm" "notifications_dlq_depth" {
 # ---------------------------------------------------------------------------
 
 resource "aws_sqs_queue" "credit_scoring_jobs_dlq" {
-  name = "credit-scoring-jobs-dlq"
+  name = "credit-scoring-jobs-dlq-${local.environment}"
 }
 
 resource "aws_sqs_queue" "credit_scoring_jobs" {
-  name = "credit-scoring-jobs"
+  name = "credit-scoring-jobs-${local.environment}"
   # Long visibility timeout: the EventBridge Pipe removes the message as soon as it hands
   # off to ecs:RunTask, so this only needs to cover the pipe's own processing window, not
   # the job's full >20 minute runtime.
@@ -161,11 +161,11 @@ resource "aws_sqs_queue" "credit_scoring_jobs" {
 }
 
 resource "aws_sqs_queue" "fraud_analysis_jobs_dlq" {
-  name = "fraud-analysis-jobs-dlq"
+  name = "fraud-analysis-jobs-dlq-${local.environment}"
 }
 
 resource "aws_sqs_queue" "fraud_analysis_jobs" {
-  name                       = "fraud-analysis-jobs"
+  name                       = "fraud-analysis-jobs-${local.environment}"
   visibility_timeout_seconds = 120
 
   redrive_policy = jsonencode({
@@ -179,7 +179,7 @@ resource "aws_sqs_queue" "fraud_analysis_jobs" {
 # ---------------------------------------------------------------------------
 
 resource "aws_scheduler_schedule" "daily_stale_report" {
-  name                         = "northbridge-daily-stale-report"
+  name                         = "northbridge-daily-stale-report-${local.environment}"
   schedule_expression          = "cron(0 2 * * ? *)"
   schedule_expression_timezone = "UTC"
 
@@ -214,7 +214,7 @@ resource "aws_scheduler_schedule" "daily_stale_report" {
 # ---------------------------------------------------------------------------
 
 resource "aws_pipes_pipe" "credit_scoring" {
-  name     = "northbridge-credit-scoring-pipe"
+  name     = "northbridge-credit-scoring-pipe-${local.environment}"
   role_arn = aws_iam_role.pipes_run_task.arn
   source   = aws_sqs_queue.credit_scoring_jobs.arn
   target   = aws_ecs_cluster.main.arn
@@ -251,7 +251,7 @@ resource "aws_pipes_pipe" "credit_scoring" {
 }
 
 resource "aws_pipes_pipe" "fraud_forensics" {
-  name     = "northbridge-fraud-forensics-pipe"
+  name     = "northbridge-fraud-forensics-pipe-${local.environment}"
   role_arn = aws_iam_role.pipes_run_task.arn
   source   = aws_sqs_queue.fraud_analysis_jobs.arn
   target   = aws_ecs_cluster.main.arn

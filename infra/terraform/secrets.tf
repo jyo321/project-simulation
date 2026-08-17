@@ -2,7 +2,7 @@
 # tasks via the task definition's `secrets` block, never as plaintext `environment` values.
 
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name = "northbridge/db-credentials"
+  name = "northbridge/${local.environment}/db-credentials"
 }
 
 resource "aws_secretsmanager_secret_version" "db_credentials" {

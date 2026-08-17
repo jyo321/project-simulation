@@ -57,21 +57,63 @@ created automatically the first time the stack comes up.
 
 ## Deploying to AWS
 
+### 0. One-time: bootstrap remote state
+
+`infra/terraform` stores its state in S3 (with DynamoDB locking) so that both your
+machine and the ephemeral GitHub Actions runners share the same state instead of each
+starting from blank. That S3 bucket/table has to exist *before* `infra/terraform` can
+initialize, so it lives in its own tiny, separately-stated config:
+
+```bash
+cd infra/terraform-bootstrap
+terraform init
+terraform apply -var="state_bucket_name=northbridge-tfstate-<your-account-id>"
+```
+
+Take the bucket name you just used and put it in the `backend "s3"` block at the top of
+`infra/terraform/providers.tf` (replace `REPLACE-WITH-YOUR-ACCOUNT-ID`). Run this once,
+ever, per AWS account — not per environment.
+
+### 1. Workspaces = environments
+
+`infra/terraform` uses **Terraform workspaces** to run `dev`/`staging`/`prod` side by
+side in the same AWS account without name collisions — every environment-scoped
+resource (RDS instance, S3 buckets, SQS/SNS, ECR repos, ECS cluster/services, IAM task
+roles, ALB target groups, ...) is suffixed with `local.environment`, which is just
+`terraform.workspace` (`infra/terraform/locals.tf`). There's no `-var=environment` to
+remember to set — whichever workspace is selected *is* the environment.
+
 ```bash
 cd infra/terraform
 terraform init
+terraform workspace new dev       # or: terraform workspace select dev
 terraform plan  -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
 terraform apply -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
 ```
 
-This provisions the VPC, RDS, S3 buckets, SQS/SNS/EventBridge topology, ECS cluster/ALB,
-ECR repositories, and the two CloudFront distributions. It does **not** push any container
-images — that's what the CI/CD pipelines below are for.
+Repeat `terraform workspace new staging` / `prod` and apply again to stand up the other
+environments — each gets its own VPC, database, buckets, queues, and ECS cluster.
+
+**Account-wide resources are the one exception.** The GitHub OIDC provider and the two
+CI/CD IAM roles (`infra/terraform/github_oidc.tf`) are IAM objects whose *names* are
+unique per AWS account, not per workspace — every workspace trying to create them would
+collide on the second apply. They're gated behind `create_shared_resources` (default
+`false`); set `-var="create_shared_resources=true"` in **exactly one** workspace, ever
+(pick whichever you consider authoritative, e.g. `prod`):
+
+```bash
+terraform workspace select prod
+terraform apply -var="create_shared_resources=true" -var="github_repo=<owner>/<repo>" -var="db_password=<secret>"
+```
+
+This provisions, per workspace: the VPC, RDS, S3 buckets, SQS/SNS/EventBridge topology,
+ECS cluster/ALB, ECR repositories, and the two CloudFront distributions. It does **not**
+push any container images — that's what the CI/CD pipelines below are for.
 
 Notice there's no `acm_certificate_arn` or domain anywhere: each CloudFront distribution
 fronts both its S3 bucket *and* the ALB (see `infra/terraform/cloudfront_frontend.tf`),
-terminating HTTPS with CloudFront's own free default certificate. The whole system is
-reachable from the CloudFront URL alone — `terraform output applicant_portal_cloudfront_domain`
+terminating HTTPS with CloudFront's own free default certificate. Each environment is
+reachable from its own CloudFront URL alone — `terraform output applicant_portal_cloudfront_domain`
 / `reviewer_console_cloudfront_domain` — no domain purchase or Route 53 record required.
 
 ## CI/CD (GitHub Actions)
@@ -105,6 +147,26 @@ watched paths:
 
 After that, `git push` to `main` is the entire deploy step — whichever pipelines match the
 changed paths run on their own.
+
+**Targeting an environment.** All four workflows accept a `workflow_dispatch` input
+named `environment` (Actions tab → pick the workflow → "Run workflow"), which becomes
+`TARGET_ENV` and is threaded into every environment-scoped name the workflow touches —
+the ECR image path (`northbridge/<env>/<image>`), the ECS cluster
+(`northbridge-cluster-<env>`), and the task-definition family. It defaults to `prod` on
+the automatic push-to-`main` trigger, so nothing changes for the common case; use a
+manual dispatch to plan/apply or deploy against `dev`/`staging` instead. The value you
+pass here must match a workspace you've already created in step 1 above — the infra
+pipeline's `terraform workspace select "$TARGET_ENV" || terraform workspace new "$TARGET_ENV"`
+step will create it if it doesn't exist yet, but the app pipelines (api/workers/frontend)
+assume the ECR repos/ECS cluster for that environment already exist.
+
+**Limitation — secrets are not per-environment.** `DB_PASSWORD` and the SPA
+bucket/CloudFront IDs are single repo-level GitHub secrets, reused for whichever
+environment a given run targets. That's fine as long as every environment shares one DB
+password and you're comfortable a `dev` run and a `prod` run read the same secret
+values; if you want per-environment secrets, move them into GitHub **environments**
+(`dev`, `staging`, `prod`) instead of repo-level secrets, and reference
+`${{ vars.TARGET_ENV }}`-scoped environment secrets in each job.
 
 ## Local dev vs. AWS — what actually differs
 

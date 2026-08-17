@@ -8,12 +8,12 @@ resource "aws_kms_key" "raw_documents" {
 }
 
 resource "aws_kms_alias" "raw_documents" {
-  name          = "alias/northbridge-raw-documents"
+  name          = "alias/northbridge-raw-documents-${local.environment}"
   target_key_id = aws_kms_key.raw_documents.key_id
 }
 
 resource "aws_s3_bucket" "raw_documents" {
-  bucket = "northbridge-raw-documents-${var.environment}"
+  bucket = "northbridge-raw-documents-${local.environment}"
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "raw_documents" {
@@ -29,7 +29,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "raw_documents" {
 }
 
 resource "aws_s3_bucket" "generated_documents" {
-  bucket = "northbridge-generated-documents-${var.environment}"
+  bucket = "northbridge-generated-documents-${local.environment}"
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "generated_documents" {
@@ -43,7 +43,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "generated_documen
 }
 
 resource "aws_s3_bucket" "reports" {
-  bucket = "northbridge-reports-${var.environment}"
+  bucket = "northbridge-reports-${local.environment}"
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "reports" {
