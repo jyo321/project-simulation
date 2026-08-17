@@ -1,7 +1,7 @@
-# Bootstrap: creates the S3 bucket + DynamoDB table that infra/terraform's own state lives
-# in. Deliberately a SEPARATE Terraform config with its OWN local state — you can't store
-# Terraform's state in a bucket that the same apply is still creating, so this one small
-# piece stays local-state and gets applied once, by hand, before anything else.
+# Bootstrap: creates the S3 bucket that infra/terraform's own state lives in. Deliberately
+# a SEPARATE Terraform config with its OWN local state — you can't store Terraform's state
+# in a bucket that the same apply is still creating, so this one small piece stays
+# local-state and gets applied once, by hand, before anything else.
 #
 # Usage (one time, ever, per AWS account):
 #   cd infra/terraform-bootstrap
@@ -10,7 +10,7 @@
 # Then put that same bucket name into infra/terraform/providers.tf's backend block.
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0" # S3-native state locking (use_lockfile) needs 1.10+
 
   required_providers {
     aws = {
@@ -62,24 +62,6 @@ resource "aws_s3_bucket_public_access_block" "state" {
   restrict_public_buckets = true
 }
 
-# State locking: without this, two people (or a person and a CI run) applying at the same
-# moment can corrupt the state file. Terraform automatically acquires/releases a lock row
-# here around every plan/apply.
-resource "aws_dynamodb_table" "locks" {
-  name         = "northbridge-terraform-locks"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-}
-
 output "state_bucket_name" {
   value = aws_s3_bucket.state.bucket
-}
-
-output "lock_table_name" {
-  value = aws_dynamodb_table.locks.name
 }
