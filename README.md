@@ -85,7 +85,7 @@ ever, per AWS account — not per environment.
 
 ### 1. Workspaces = environments
 
-`infra/terraform` uses **Terraform workspaces** to run `dev`/`staging`/`prod` side by
+`infra/terraform` uses **Terraform workspaces** to run `dev`/`staging`/`uat`/`prod` side by
 side in the same AWS account without name collisions — every environment-scoped
 resource (RDS instance, S3 buckets, SQS/SNS, ECR repos, ECS cluster/services, IAM task
 roles, ALB target groups, ...) is suffixed with `local.environment`, which is just
@@ -99,9 +99,9 @@ terraform workspace new dev       # or: terraform workspace select dev
 ```
 
 **Per-environment sizing lives in `.tfvars`, not on the command line.**
-`infra/terraform/environments/{dev,staging,prod}.tfvars` hold everything that should
+`infra/terraform/environments/{dev,staging,uat,prod}.tfvars` hold everything that should
 genuinely differ between environments — RDS instance class, ECS task CPU/memory, VPC CIDR
-(non-overlapping across all three, so any two can be peered later without a re-address) —
+(non-overlapping across all four, so any two can be peered later without a re-address) —
 see `infra/terraform/environments/README.md`. `db_password` is deliberately **not** in
 any of them (they're committed to git); always pass it separately, e.g. via
 `TF_VAR_db_password`.
@@ -133,7 +133,7 @@ swap for whichever workspace you're applying.) After this first apply, `workers-
 keeps that Lambda's code up to date on every push — you only do this manual seed once,
 the first time a given environment is created.
 
-Repeat the whole sequence (`terraform workspace new staging` / `prod`, matching
+Repeat the whole sequence (`terraform workspace new staging` / `uat` / `prod`, matching
 `.tfvars` file, ECR seed, apply) to stand up the other environments — each gets its own
 VPC, database, buckets, queues, and ECS cluster.
 
@@ -230,7 +230,7 @@ bucket/CloudFront IDs are single repo-level GitHub secrets, reused for whichever
 environment a given run targets. That's fine as long as every environment shares one DB
 password and you're comfortable a `dev` run and a `prod` run read the same secret
 values; if you want per-environment secrets, move them into GitHub **environments**
-(`dev`, `staging`, `prod`) instead of repo-level secrets, and reference
+(`dev`, `staging`, `uat`, `prod`) instead of repo-level secrets, and reference
 `${{ vars.TARGET_ENV }}`-scoped environment secrets in each job.
 
 ## Local dev vs. AWS — what actually differs

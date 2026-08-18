@@ -1,8 +1,13 @@
 # Per-environment `.tfvars`
 
 One file per Terraform workspace, holding the values that should genuinely differ between
-`dev`/`staging`/`prod` (instance sizing, task CPU/memory, VPC CIDR) — anything that's the
-same everywhere belongs in `variables.tf`'s defaults instead, not duplicated three times here.
+`dev`/`staging`/`uat`/`prod` (instance sizing, task CPU/memory, VPC CIDR) — anything that's
+the same everywhere belongs in `variables.tf`'s defaults instead, not duplicated four times
+here.
+
+`uat` is sized like `staging` (not a load-test target) but matches `prod`'s API task
+CPU/memory on purpose — it exists for behavior sign-off, so it should behave like prod for
+whoever's testing it, not be scaled down the way `dev`/`staging` are for cost.
 
 **`db_password` is deliberately never in these files.** They're committed to git; a
 database password isn't. Always supply it separately, at apply time:
@@ -22,6 +27,6 @@ applied to every environment is exactly the mistake that variable exists to prev
 it as an explicit `-var` only when you mean it, in the one workspace you're bootstrapping
 shared resources from.
 
-The VPC CIDRs below are deliberately non-overlapping across the three environments —
+The VPC CIDRs below are deliberately non-overlapping across all four environments —
 harmless today, but it means you can VPC-peer or Transit-Gateway any two of them later
 without a re-address.
