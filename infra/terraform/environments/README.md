@@ -1,9 +1,10 @@
 # Per-environment `.tfvars`
 
-One file per Terraform workspace, holding the values that should genuinely differ between
-`dev`/`staging`/`uat`/`prod` (instance sizing, task CPU/memory, VPC CIDR) — anything that's
-the same everywhere belongs in `variables.tf`'s defaults instead, not duplicated four times
-here.
+One file per Terraform workspace. Every variable declared in `variables.tf` gets an
+explicit value here for every environment — including ones that happen to be identical
+across all four (`aws_region`, `db_name`, ...) — so each file is a complete, self-contained
+picture of that environment's configuration, not just a diff against some implicit default
+you'd have to go read `variables.tf` to find. The two deliberate exceptions are below.
 
 `uat` is sized like `staging` (not a load-test target) but matches `prod`'s API task
 CPU/memory on purpose — it exists for behavior sign-off, so it should behave like prod for
@@ -30,3 +31,12 @@ shared resources from.
 The VPC CIDRs below are deliberately non-overlapping across all four environments —
 harmless today, but it means you can VPC-peer or Transit-Gateway any two of them later
 without a re-address.
+
+**Your editor's Terraform extension will likely flag every attribute in these files as
+"unexpected"/"not expected here" — that's a false alarm, not a real error.** Its language
+server resolves a `.tfvars` file's variables against whatever module lives in the *same
+directory*, and since the `variable` blocks live one level up in `infra/terraform/*.tf`,
+not here, it can't see any declarations at all from this folder's point of view. The
+actual Terraform CLI has no such restriction — `-var-file` accepts a path to anywhere —
+and `terraform plan -var-file="environments/dev.tfvars"` (run from `infra/terraform/`)
+resolves every value correctly.

@@ -26,7 +26,6 @@ variable "create_shared_resources" {
 variable "github_repo" {
   description = "GitHub repo these OIDC roles trust, as \"owner/repo\" — e.g. \"jyo321/project-simulation\"."
   type        = string
-  default     = ""
 }
 
 variable "github_oidc_provider_exists" {
