@@ -62,7 +62,10 @@ jobs:
       # Selects the workspace this run targets, creating it the first time it's ever used
       # (e.g. the very first "staging" run) instead of failing because it doesn't exist yet.
       - run: terraform workspace select "$TARGET_ENV" || terraform workspace new "$TARGET_ENV"
-      - run: terraform plan -input=false -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"
+      # -var after -var-file wins on conflict (Terraform CLI precedence) — the file supplies
+      # this environment's sizing, the trailing -var overrides github_repo with wherever this
+      # workflow is actually running, and DB_PASSWORD never goes in a committed file.
+      - run: terraform plan -input=false -var-file="environments/$TARGET_ENV.tfvars" -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"
 
   apply:
     needs: plan
@@ -80,4 +83,4 @@ jobs:
 
       - run: terraform init
       - run: terraform workspace select "$TARGET_ENV" || terraform workspace new "$TARGET_ENV"
-      - run: terraform apply -input=false -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"
+      - run: terraform apply -input=false -auto-approve -var-file="environments/$TARGET_ENV.tfvars" -var="db_password=${{ secrets.DB_PASSWORD }}" -var="github_repo=${{ github.repository }}"

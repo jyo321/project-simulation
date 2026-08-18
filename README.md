@@ -98,6 +98,14 @@ terraform init
 terraform workspace new dev       # or: terraform workspace select dev
 ```
 
+**Per-environment sizing lives in `.tfvars`, not on the command line.**
+`infra/terraform/environments/{dev,staging,prod}.tfvars` hold everything that should
+genuinely differ between environments — RDS instance class, ECS task CPU/memory, VPC CIDR
+(non-overlapping across all three, so any two can be peered later without a re-address) —
+see `infra/terraform/environments/README.md`. `db_password` is deliberately **not** in
+any of them (they're committed to git); always pass it separately, e.g. via
+`TF_VAR_db_password`.
+
 **Every new environment needs one extra step before its first full apply.** Everything
 in this stack is ECS-based except `DailyStaleReportJob`, which runs as a Lambda
 container image (`infra/terraform/lambda.tf`) — and unlike an ECS task definition,
@@ -107,7 +115,8 @@ resource. Create just the ECR repos first, seed that one repo with a real image,
 apply everything else:
 
 ```bash
-terraform apply -target=aws_ecr_repository.service -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
+export TF_VAR_db_password=<secret>
+terraform apply -target=aws_ecr_repository.service -var-file="environments/dev.tfvars"
 
 aws ecr get-login-password --region us-east-1 | \
   docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
@@ -115,29 +124,30 @@ docker build -f workers/DailyStaleReportJob/Dockerfile \
   -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/northbridge/dev/daily-stale-report-job:latest .
 docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/northbridge/dev/daily-stale-report-job:latest
 
-terraform plan  -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
-terraform apply -var="db_password=<secret>" -var="github_repo=<owner>/<repo>"
+terraform plan  -var-file="environments/dev.tfvars"
+terraform apply -var-file="environments/dev.tfvars"
 ```
 
-(`northbridge/dev/...` above assumes the `dev` workspace — swap the path segment to
-match whichever workspace you're applying.) After this first apply, `workers-ci-cd.yml`
+(`northbridge/dev/...` and `environments/dev.tfvars` above assume the `dev` workspace —
+swap for whichever workspace you're applying.) After this first apply, `workers-ci-cd.yml`
 keeps that Lambda's code up to date on every push — you only do this manual seed once,
 the first time a given environment is created.
 
-Repeat the whole sequence (`terraform workspace new staging` / `prod`, ECR seed, apply)
-to stand up the other environments — each gets its own VPC, database, buckets, queues,
-and ECS cluster.
+Repeat the whole sequence (`terraform workspace new staging` / `prod`, matching
+`.tfvars` file, ECR seed, apply) to stand up the other environments — each gets its own
+VPC, database, buckets, queues, and ECS cluster.
 
 **Account-wide resources are the one exception.** The GitHub OIDC provider and the two
 CI/CD IAM roles (`infra/terraform/github_oidc.tf`) are IAM objects whose *names* are
 unique per AWS account, not per workspace — every workspace trying to create them would
 collide on the second apply. They're gated behind `create_shared_resources` (default
 `false`); set `-var="create_shared_resources=true"` in **exactly one** workspace, ever
-(pick whichever you consider authoritative, e.g. `prod`):
+(pick whichever you consider authoritative, e.g. `prod`). This one is intentionally kept
+out of the `.tfvars` files — it's a one-time override, not per-environment sizing:
 
 ```bash
 terraform workspace select prod
-terraform apply -var="create_shared_resources=true" -var="github_repo=<owner>/<repo>" -var="db_password=<secret>"
+terraform apply -var-file="environments/prod.tfvars" -var="create_shared_resources=true"
 ```
 
 This provisions, per workspace: the VPC, RDS, S3 buckets, SQS/SNS/EventBridge topology,
