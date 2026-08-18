@@ -32,6 +32,18 @@ variable "db_instance_class" {
   type = string
 }
 
+variable "db_multi_az" {
+  description = "Whether RDS runs Multi-AZ. Defaults true (prod-grade); dev/staging override to false to cut cost on disposable environments."
+  type        = bool
+  default     = true
+}
+
+variable "db_deletion_protection" {
+  description = "Whether RDS blocks `terraform destroy`/console deletion. Defaults true; dev/staging override to false since the README's `terraform destroy` teardown step would otherwise fail on the RDS instance."
+  type        = bool
+  default     = true
+}
+
 variable "api_task_cpu" {
   description = "CPU units for the three request-serving API tasks."
   type        = number

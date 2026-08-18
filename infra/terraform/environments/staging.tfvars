@@ -11,6 +11,10 @@ db_username = "northbridge_app"
 # One tier up from dev — enough headroom to load-test against, not full prod cost.
 db_instance_class = "db.t4g.small"
 
+# Disposable environment, same reasoning as dev.tfvars.
+db_multi_az            = false
+db_deletion_protection = false
+
 api_task_cpu    = 512
 api_task_memory = 1024
 

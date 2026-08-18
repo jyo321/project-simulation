@@ -23,6 +23,19 @@ on:
         default: "prod"
         type: string
 
+# Required for aws-actions/configure-aws-credentials' OIDC role assumption below —
+# GitHub defaults id-token to "none" regardless of repo-level workflow permissions.
+permissions:
+  id-token: write
+  contents: read
+
+# Queue rather than let two overlapping infra changes race each other; S3-native state
+# locking would fail the second run anyway, but queueing gives a clean run instead of a
+# failed one.
+concurrency:
+  group: infra-${{ inputs.environment || 'prod' }}-${{ github.ref }}
+  cancel-in-progress: false
+
 defaults:
   run:
     working-directory: infra/terraform

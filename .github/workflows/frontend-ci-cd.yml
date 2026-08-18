@@ -13,6 +13,16 @@ on:
     paths:
       - "frontend/**"
 
+# Required for aws-actions/configure-aws-credentials' OIDC role assumption below —
+# GitHub defaults id-token to "none" regardless of repo-level workflow permissions.
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest

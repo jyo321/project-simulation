@@ -11,6 +11,11 @@ db_username = "northbridge_app"
 # Smallest RDS class that still runs Postgres 16 comfortably for a dev workload.
 db_instance_class = "db.t4g.micro"
 
+# Disposable environment: no Multi-AZ standby to pay for, and deletion protection off so
+# `terraform destroy` (see README's "Known gotchas") actually tears it down.
+db_multi_az            = false
+db_deletion_protection = false
+
 # Half the prod API task size — dev traffic doesn't need it, and it's the cost that scales
 # with desired_count (2 tasks per API) most directly.
 api_task_cpu    = 256

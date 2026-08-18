@@ -21,6 +21,16 @@ on:
         default: "prod"
         type: string
 
+# Required for aws-actions/configure-aws-credentials' OIDC role assumption below —
+# GitHub defaults id-token to "none" regardless of repo-level workflow permissions.
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: api-${{ inputs.environment || 'prod' }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
