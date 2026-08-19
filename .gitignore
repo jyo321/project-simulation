@@ -14,8 +14,8 @@ dist/
 *.tfvars
 !*.tfvars.example
 # Committed on purpose: per-environment sizing only, never secrets — see
-# infra/terraform/environments/README.md.
-!infra/terraform/environments/*.tfvars
+# infra/terraform/infrastructure/environments/README.md.
+!infra/terraform/infrastructure/environments/*.tfvars
 crash.log
 crash.*.log
 

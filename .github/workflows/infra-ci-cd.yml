@@ -11,10 +11,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "infra/terraform/**"
+      - "infra/terraform/infrastructure/**"
   pull_request:
     paths:
-      - "infra/terraform/**"
+      - "infra/terraform/infrastructure/**"
   workflow_dispatch:
     inputs:
       environment:
@@ -38,15 +38,15 @@ concurrency:
 
 defaults:
   run:
-    working-directory: infra/terraform
+    working-directory: infra/terraform/infrastructure
 
 env:
   TARGET_ENV: ${{ inputs.environment || 'prod' }}
 
 jobs:
   # Runs on PRs too — no AWS credentials needed for fmt/validate, so PRs (which the
-  # OIDC trust policy in github_oidc.tf deliberately does not grant AWS access to)
-  # still get fast feedback on syntax errors.
+  # OIDC trust policy in modules/github_oidc/main.tf deliberately does not grant AWS
+  # access to) still get fast feedback on syntax errors.
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +69,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
-          aws-region: us-east-1
+          aws-region: us-east-2
 
       - run: terraform init
       # Selects the workspace this run targets, creating it the first time it's ever used
@@ -92,7 +92,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
-          aws-region: us-east-1
+          aws-region: us-east-2
 
       - run: terraform init
       - run: terraform workspace select "$TARGET_ENV" || terraform workspace new "$TARGET_ENV"

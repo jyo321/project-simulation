@@ -6,7 +6,7 @@ name: Background Services CI/CD
 # are invoked via ecs:RunTask, not a service — pushing a new sha-tagged image and registering
 # it as the new task-definition revision is enough; the next EventBridge Pipes invocation
 # picks it up automatically, with no service to roll. The daily report job runs as a Lambda
-# container image instead (infra/terraform/lambda.tf) — deploying it is a plain
+# container image instead (infra/terraform/infrastructure/modules/lambda) — deploying it is a plain
 # `aws lambda update-function-code`, no task definition involved.
 on:
   push:
@@ -39,8 +39,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-2.amazonaws.com
   TARGET_ENV: ${{ inputs.environment || 'prod' }}
 
 jobs:
@@ -154,7 +154,7 @@ jobs:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
 
       # No task definition involved — this one's a Lambda container image (see
-      # infra/terraform/lambda.tf), so the deploy step is just pointing the function
+      # infra/terraform/infrastructure/modules/lambda), so the deploy step is just pointing the function
       # at the newly-pushed image digest.
       - name: Deploy to Lambda
         if: matrix.kind == 'lambda'
